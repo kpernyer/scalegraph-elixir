@@ -1,0 +1,173 @@
+defmodule Scalegraph.Participant.Server do
+  @moduledoc """
+  gRPC server implementation for the Participant service.
+
+  Business errors (not_found, already_exists, invalid_argument) are returned
+  as gRPC error tuples and logged at info level.
+
+  System errors are raised as exceptions and logged at error level.
+  """
+
+  use GRPC.Server, service: Scalegraph.Proto.ParticipantService.Service
+
+  require Logger
+
+  alias Scalegraph.Participant.Core
+  alias Scalegraph.Proto
+
+  # Role mapping from proto enum to internal atoms
+  @role_mapping %{
+    :ACCESS_PROVIDER => :access_provider,
+    :BANKING_PARTNER => :banking_partner,
+    :ECOSYSTEM_PARTNER => :ecosystem_partner,
+    :SUPPLIER => :supplier,
+    :EQUIPMENT_PROVIDER => :equipment_provider
+  }
+
+  @reverse_role_mapping Map.new(@role_mapping, fn {k, v} -> {v, k} end)
+
+  # Account type mapping
+  @account_type_mapping %{
+    :STANDALONE => :standalone,
+    :OPERATING => :operating,
+    :RECEIVABLES => :receivables,
+    :PAYABLES => :payables,
+    :ESCROW => :escrow,
+    :FEES => :fees,
+    :USAGE => :usage
+  }
+
+  @reverse_account_type_mapping Map.new(@account_type_mapping, fn {k, v} -> {v, k} end)
+
+  @doc """
+  Create a new participant.
+  """
+  def create_participant(request, _stream) do
+    role = Map.get(@role_mapping, request.role, :ecosystem_partner)
+    metadata = Map.new(request.metadata || [])
+
+    case Core.create_participant(request.id, request.name, role, metadata) do
+      {:ok, participant} ->
+        Logger.info("Participant created: #{participant.id}")
+        participant_to_proto(participant)
+
+      {:error, :participant_exists} ->
+        business_error(:already_exists, "Participant already exists: #{request.id}")
+
+      {:error, {:invalid_role, role, valid_roles}} ->
+        business_error(:invalid_argument, "Invalid role #{role}. Valid: #{inspect(valid_roles)}")
+
+      {:error, reason} ->
+        system_error("Failed to create participant", reason)
+    end
+  end
+
+  @doc """
+  Get participant by ID.
+  """
+  def get_participant(request, _stream) do
+    case Core.get_participant(request.participant_id) do
+      {:ok, participant} ->
+        participant_to_proto(participant)
+
+      {:error, :not_found} ->
+        business_error(:not_found, "Participant not found: #{request.participant_id}")
+
+      {:error, reason} ->
+        system_error("Failed to get participant", reason)
+    end
+  end
+
+  @doc """
+  List all participants, optionally filtered by role.
+  """
+  def list_participants(request, _stream) do
+    role_filter = if request.role == :PARTICIPANT_ROLE_UNSPECIFIED do
+      nil
+    else
+      Map.get(@role_mapping, request.role)
+    end
+
+    case Core.list_participants(role_filter) do
+      {:ok, participants} ->
+        %Proto.ListParticipantsResponse{
+          participants: Enum.map(participants, &participant_to_proto/1)
+        }
+
+      {:error, reason} ->
+        system_error("Failed to list participants", reason)
+    end
+  end
+
+  @doc """
+  Create an account for a participant.
+  """
+  def create_participant_account(request, _stream) do
+    account_type = Map.get(@account_type_mapping, request.account_type, :operating)
+    metadata = Map.new(request.metadata || [])
+
+    case Core.create_participant_account(request.participant_id, account_type, request.initial_balance, metadata) do
+      {:ok, account} ->
+        Logger.info("Account created: #{account.id}")
+        account_to_proto(account)
+
+      {:error, :participant_not_found} ->
+        business_error(:not_found, "Participant not found: #{request.participant_id}")
+
+      {:error, :account_exists} ->
+        business_error(:already_exists, "Account already exists for #{request.participant_id}:#{account_type}")
+
+      {:error, reason} ->
+        system_error("Failed to create account", reason)
+    end
+  end
+
+  @doc """
+  Get all accounts for a participant.
+  """
+  def get_participant_accounts(request, _stream) do
+    case Core.get_participant_accounts(request.participant_id) do
+      {:ok, accounts} ->
+        %Proto.GetParticipantAccountsResponse{
+          accounts: Enum.map(accounts, &account_to_proto/1)
+        }
+
+      {:error, reason} ->
+        system_error("Failed to get accounts", reason)
+    end
+  end
+
+  # Business errors - expected conditions, logged at info level
+  defp business_error(status, message) do
+    Logger.info("Business error [#{status}]: #{message}")
+    {:error, GRPC.RPCError.exception(status: status, message: message)}
+  end
+
+  # System errors - unexpected conditions, raised as exceptions (logged at error level)
+  defp system_error(context, reason) do
+    raise GRPC.RPCError, status: :internal, message: "#{context}: #{inspect(reason)}"
+  end
+
+  # Private helpers
+
+  defp participant_to_proto(participant) do
+    %Proto.Participant{
+      id: participant.id,
+      name: participant.name,
+      role: Map.get(@reverse_role_mapping, participant.role, :PARTICIPANT_ROLE_UNSPECIFIED),
+      created_at: participant.created_at,
+      metadata: participant.metadata || %{}
+    }
+  end
+
+  defp account_to_proto(account) do
+    %Proto.Account{
+      id: account.id,
+      participant_id: account.participant_id || "",
+      account_type: Map.get(@reverse_account_type_mapping, account.account_type, :ACCOUNT_TYPE_UNSPECIFIED),
+      balance: account.balance,
+      created_at: account.created_at,
+      metadata: account.metadata || %{}
+    }
+  end
+end

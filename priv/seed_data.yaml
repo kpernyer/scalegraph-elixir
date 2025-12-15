@@ -1,0 +1,136 @@
+# Scalegraph Ledger - Seed Data
+# This file is loaded on server startup to populate the database.
+#
+# Participant roles:
+#   - access_provider
+#   - banking_partner
+#   - ecosystem_partner
+#   - supplier
+#   - equipment_provider
+#
+# Account types:
+#   - operating      (day-to-day operations)
+#   - receivables    (money owed to participant)
+#   - payables       (money owed by participant)
+#   - escrow         (held funds)
+#   - fees           (fee collection)
+#   - usage          (pay-per-use tracking)
+
+participants:
+  - id: assa_abloy
+    name: ASSA ABLOY
+    role: access_provider
+    metadata:
+      country: SE
+      industry: Access Control
+      description: Global leader in access solutions
+    accounts:
+      - type: operating
+        initial_balance: 10000
+      - type: receivables
+        initial_balance: 020000
+      - type: fees
+        initial_balance: 0
+
+  - id: seb
+    name: SEB
+    role: banking_partner
+    metadata:
+      country: SE
+      industry: Banking
+      description: Nordic banking and financial services
+    accounts:
+      - type: operating
+        initial_balance: 10000000  # 100,000.00 - bank float
+      - type: escrow
+        initial_balance: 0
+      - type: fees
+        initial_balance: 034
+
+  - id: beauty_hosting
+    name: Beauty Hosting
+    role: ecosystem_partner
+    metadata:
+      country: SE
+      industry: Platform
+      description: Ecosystem partner for beauty salon chains
+    accounts:
+      - type: operating
+        initial_balance: 500000  # 5,000.00 - working capital
+      - type: receivables
+        initial_balance: 0
+      - type: payables
+        initial_balance: 0
+      - type: fees
+        initial_balance: 0
+
+  - id: schampo_etc
+    name: Schampo etc
+    role: supplier
+    metadata:
+      country: SE
+      industry: Beauty Products
+      description: Supplier of hair and beauty products
+    accounts:
+      - type: operating
+        initial_balance: 250000  # 2,500.00
+      - type: receivables
+        initial_balance: 0
+
+  - id: clipper_oy
+    name: Clipper Oy
+    role: supplier
+    metadata:
+      country: FI
+      industry: Equipment
+      description: Supplier of equipment for hair dressers
+    accounts:
+      - type: operating
+        initial_balance: 150000  # 1,500.00
+      - type: receivables
+        initial_balance: 0
+
+  - id: hairgrowers_united
+    name: Hairgrowers United Inc
+    role: equipment_provider
+    metadata:
+      country: US
+      industry: Equipment
+      description: Provider of expensive machines that charge per use
+      pricing_model: pay_per_use
+    accounts:
+      - type: operating
+        initial_balance: 1000000  # 10,000.00
+      - type: receivables
+        initial_balance: 0
+      - type: usage
+        initial_balance: 0
+
+# Example salons (you can add more)
+  - id: salon_glamour
+    name: Salon Glamour
+    role: ecosystem_partner
+    metadata:
+      country: SE
+      city: Stockholm
+      type: salon
+      description: Premium hair salon in central Stockholm
+    accounts:
+      - type: operating
+        initial_balance: 50000  # 500.00
+      - type: payables
+        initial_balance: 0
+
+  - id: klipp_och_trim
+    name: Klipp & Trim
+    role: ecosystem_partner
+    metadata:
+      country: SE
+      city: Gothenburg
+      type: salon
+      description: Family-friendly hair salon chain
+    accounts:
+      - type: operating
+        initial_balance: 75000  # 750.00
+      - type: payables
+        initial_balance: 0

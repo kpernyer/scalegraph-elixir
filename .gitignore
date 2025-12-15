@@ -1,0 +1,36 @@
+# Dependencies
+/deps/
+
+# Build
+/_build/
+/cover/
+/doc/
+
+# Mnesia data
+/Mnesia.*
+/priv/mnesia_data/
+
+# Generated files
+*.beam
+*.ez
+
+# IDE
+.elixir_ls/
+.idea/
+*.iml
+
+# Mix
+mix.lock
+erl_crash.dump
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Rust CLI
+cli/target/
+cli/Cargo.lock
+
+# Rust MCP
+mcp/target/
+mcp/Cargo.lock
