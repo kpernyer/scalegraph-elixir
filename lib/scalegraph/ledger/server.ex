@@ -106,8 +106,11 @@ defmodule Scalegraph.Ledger.Server do
       {:error, :not_found} ->
         business_error(:not_found, "Account not found: #{request.account_id}")
 
-      {:error, {:insufficient_funds, message}} ->
-        business_error(:failed_precondition, message)
+      {:error, {:insufficient_funds, balance, amount}} ->
+        business_error(
+          :failed_precondition,
+          "Balance #{balance} insufficient for amount #{amount}"
+        )
 
       {:error, reason} ->
         system_error("Debit failed", reason)
@@ -118,20 +121,24 @@ defmodule Scalegraph.Ledger.Server do
   Execute a multi-party atomic transfer.
   """
   def transfer(request, _stream) do
-    entries = Enum.map(request.entries, fn entry ->
-      {entry.account_id, entry.amount}
-    end)
+    entries =
+      Enum.map(request.entries, fn entry ->
+        {entry.account_id, entry.amount}
+      end)
 
     case Core.transfer(entries, request.reference || "") do
       {:ok, tx} ->
         Logger.info("Transfer completed: #{tx.id}")
         transaction_to_proto(tx)
 
-      {:error, {:not_found, message}} ->
-        business_error(:not_found, message)
+      {:error, {:not_found, account_id}} ->
+        business_error(:not_found, "Account not found: #{account_id}")
 
-      {:error, {:insufficient_funds, message}} ->
-        business_error(:failed_precondition, message)
+      {:error, {:insufficient_funds, account_id, balance, amount}} ->
+        business_error(
+          :failed_precondition,
+          "Account #{account_id} has balance #{balance}, cannot apply #{amount}"
+        )
 
       {:error, reason} ->
         system_error("Transfer failed", reason)
@@ -160,7 +167,7 @@ defmodule Scalegraph.Ledger.Server do
   # Business errors - expected conditions, logged at info level
   defp business_error(status, message) do
     Logger.info("Business error [#{status}]: #{message}")
-    {:error, GRPC.RPCError.exception(status: status, message: message)}
+    raise GRPC.RPCError, status: status, message: message
   end
 
   # System errors - unexpected conditions, raised as exceptions (logged at error level)
@@ -171,12 +178,13 @@ defmodule Scalegraph.Ledger.Server do
   # Private helpers
 
   defp transaction_to_proto(tx) do
-    entries = Enum.map(tx.entries, fn entry ->
-      %Proto.TransferEntry{
-        account_id: entry.account_id,
-        amount: entry.amount
-      }
-    end)
+    entries =
+      Enum.map(tx.entries, fn entry ->
+        %Proto.TransferEntry{
+          account_id: entry.account_id,
+          amount: entry.amount
+        }
+      end)
 
     %Proto.Transaction{
       id: tx.id,
@@ -191,7 +199,8 @@ defmodule Scalegraph.Ledger.Server do
     %Proto.Account{
       id: account.id,
       participant_id: account.participant_id || "",
-      account_type: Map.get(@reverse_account_type_mapping, account.account_type, :ACCOUNT_TYPE_UNSPECIFIED),
+      account_type:
+        Map.get(@reverse_account_type_mapping, account.account_type, :ACCOUNT_TYPE_UNSPECIFIED),
       balance: account.balance,
       created_at: account.created_at,
       metadata: account.metadata || %{}

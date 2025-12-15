@@ -82,11 +82,12 @@ defmodule Scalegraph.Participant.Server do
   List all participants, optionally filtered by role.
   """
   def list_participants(request, _stream) do
-    role_filter = if request.role == :PARTICIPANT_ROLE_UNSPECIFIED do
-      nil
-    else
-      Map.get(@role_mapping, request.role)
-    end
+    role_filter =
+      if request.role == :PARTICIPANT_ROLE_UNSPECIFIED do
+        nil
+      else
+        Map.get(@role_mapping, request.role)
+      end
 
     case Core.list_participants(role_filter) do
       {:ok, participants} ->
@@ -106,7 +107,12 @@ defmodule Scalegraph.Participant.Server do
     account_type = Map.get(@account_type_mapping, request.account_type, :operating)
     metadata = Map.new(request.metadata || [])
 
-    case Core.create_participant_account(request.participant_id, account_type, request.initial_balance, metadata) do
+    case Core.create_participant_account(
+           request.participant_id,
+           account_type,
+           request.initial_balance,
+           metadata
+         ) do
       {:ok, account} ->
         Logger.info("Account created: #{account.id}")
         account_to_proto(account)
@@ -115,7 +121,10 @@ defmodule Scalegraph.Participant.Server do
         business_error(:not_found, "Participant not found: #{request.participant_id}")
 
       {:error, :account_exists} ->
-        business_error(:already_exists, "Account already exists for #{request.participant_id}:#{account_type}")
+        business_error(
+          :already_exists,
+          "Account already exists for #{request.participant_id}:#{account_type}"
+        )
 
       {:error, reason} ->
         system_error("Failed to create account", reason)
@@ -137,10 +146,80 @@ defmodule Scalegraph.Participant.Server do
     end
   end
 
+  @doc """
+  Add a service to a participant.
+  """
+  def add_service(request, _stream) do
+    case Core.add_service(request.participant_id, request.service_id) do
+      {:ok, participant} ->
+        Logger.info(
+          "Service #{request.service_id} added to participant #{request.participant_id}"
+        )
+
+        participant_to_proto(participant)
+
+      {:error, :not_found} ->
+        business_error(:not_found, "Participant not found: #{request.participant_id}")
+
+      {:error, :service_exists} ->
+        business_error(
+          :already_exists,
+          "Service #{request.service_id} already declared for participant #{request.participant_id}"
+        )
+
+      {:error, reason} ->
+        system_error("Failed to add service", reason)
+    end
+  end
+
+  @doc """
+  Remove a service from a participant.
+  """
+  def remove_service(request, _stream) do
+    case Core.remove_service(request.participant_id, request.service_id) do
+      {:ok, participant} ->
+        Logger.info(
+          "Service #{request.service_id} removed from participant #{request.participant_id}"
+        )
+
+        participant_to_proto(participant)
+
+      {:error, :not_found} ->
+        business_error(:not_found, "Participant not found: #{request.participant_id}")
+
+      {:error, :service_not_found} ->
+        business_error(
+          :not_found,
+          "Service #{request.service_id} not found for participant #{request.participant_id}"
+        )
+
+      {:error, reason} ->
+        system_error("Failed to remove service", reason)
+    end
+  end
+
+  @doc """
+  List all services provided by a participant.
+  """
+  def list_services(request, _stream) do
+    case Core.list_services(request.participant_id) do
+      {:ok, services} ->
+        %Proto.ListServicesResponse{
+          services: services
+        }
+
+      {:error, :not_found} ->
+        business_error(:not_found, "Participant not found: #{request.participant_id}")
+
+      {:error, reason} ->
+        system_error("Failed to list services", reason)
+    end
+  end
+
   # Business errors - expected conditions, logged at info level
   defp business_error(status, message) do
     Logger.info("Business error [#{status}]: #{message}")
-    {:error, GRPC.RPCError.exception(status: status, message: message)}
+    raise GRPC.RPCError, status: status, message: message
   end
 
   # System errors - unexpected conditions, raised as exceptions (logged at error level)
@@ -156,7 +235,8 @@ defmodule Scalegraph.Participant.Server do
       name: participant.name,
       role: Map.get(@reverse_role_mapping, participant.role, :PARTICIPANT_ROLE_UNSPECIFIED),
       created_at: participant.created_at,
-      metadata: participant.metadata || %{}
+      metadata: participant.metadata || %{},
+      services: participant.services || []
     }
   end
 
@@ -164,7 +244,8 @@ defmodule Scalegraph.Participant.Server do
     %Proto.Account{
       id: account.id,
       participant_id: account.participant_id || "",
-      account_type: Map.get(@reverse_account_type_mapping, account.account_type, :ACCOUNT_TYPE_UNSPECIFIED),
+      account_type:
+        Map.get(@reverse_account_type_mapping, account.account_type, :ACCOUNT_TYPE_UNSPECIFIED),
       balance: account.balance,
       created_at: account.created_at,
       metadata: account.metadata || %{}

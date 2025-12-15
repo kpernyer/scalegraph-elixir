@@ -53,25 +53,28 @@ defmodule Scalegraph.Business.Transactions do
   """
   def purchase_invoice(supplier_id, buyer_id, amount, reference)
       when is_binary(supplier_id) and is_binary(buyer_id) and is_integer(amount) and amount > 0 do
-
     supplier_receivables = "#{supplier_id}:receivables"
     buyer_payables = "#{buyer_id}:payables"
 
     entries = [
-      {supplier_receivables, amount},   # Supplier is owed money (+)
-      {buyer_payables, -amount}         # Buyer owes money (-)
+      # Supplier is owed money (+)
+      {supplier_receivables, amount},
+      # Buyer owes money (-)
+      {buyer_payables, -amount}
     ]
 
     case Ledger.transfer(entries, "INVOICE: #{reference}") do
       {:ok, tx} ->
         Logger.info("Purchase invoice created: #{reference} for #{format_amount(amount)}")
-        {:ok, %{
-          transaction_id: tx.id,
-          invoice_ref: reference,
-          supplier: supplier_id,
-          buyer: buyer_id,
-          amount: amount
-        }}
+
+        {:ok,
+         %{
+           transaction_id: tx.id,
+           invoice_ref: reference,
+           supplier: supplier_id,
+           buyer: buyer_id,
+           amount: amount
+         }}
 
       {:error, reason} ->
         Logger.warning("Purchase invoice failed: #{inspect(reason)}")
@@ -101,7 +104,6 @@ defmodule Scalegraph.Business.Transactions do
   """
   def pay_invoice(supplier_id, buyer_id, amount, reference)
       when is_binary(supplier_id) and is_binary(buyer_id) and is_integer(amount) and amount > 0 do
-
     supplier_operating = "#{supplier_id}:operating"
     supplier_receivables = "#{supplier_id}:receivables"
     buyer_operating = "#{buyer_id}:operating"
@@ -109,22 +111,28 @@ defmodule Scalegraph.Business.Transactions do
 
     # All four entries in one atomic transaction
     entries = [
-      {buyer_operating, -amount},        # Money leaves buyer
-      {supplier_operating, amount},      # Money arrives at supplier
-      {supplier_receivables, -amount},   # Clear the receivable
-      {buyer_payables, amount}           # Clear the payable
+      # Money leaves buyer
+      {buyer_operating, -amount},
+      # Money arrives at supplier
+      {supplier_operating, amount},
+      # Clear the receivable
+      {supplier_receivables, -amount},
+      # Clear the payable
+      {buyer_payables, amount}
     ]
 
     case Ledger.transfer(entries, "PAYMENT: #{reference}") do
       {:ok, tx} ->
         Logger.info("Invoice paid: #{reference} for #{format_amount(amount)}")
-        {:ok, %{
-          transaction_id: tx.id,
-          payment_ref: reference,
-          supplier: supplier_id,
-          buyer: buyer_id,
-          amount: amount
-        }}
+
+        {:ok,
+         %{
+           transaction_id: tx.id,
+           payment_ref: reference,
+           supplier: supplier_id,
+           buyer: buyer_id,
+           amount: amount
+         }}
 
       {:error, reason} ->
         Logger.warning("Invoice payment failed: #{inspect(reason)}")
@@ -169,8 +177,8 @@ defmodule Scalegraph.Business.Transactions do
       {:ok, %{transaction_id: "...", amount: 800, platform_fee: 50}}
   """
   def access_payment(payer_id, access_provider_id, amount, opts \\ [])
-      when is_binary(payer_id) and is_binary(access_provider_id) and is_integer(amount) and amount > 0 do
-
+      when is_binary(payer_id) and is_binary(access_provider_id) and is_integer(amount) and
+             amount > 0 do
     reference = Keyword.get(opts, :reference, generate_access_ref())
     platform_id = Keyword.get(opts, :platform_id)
     platform_fee = Keyword.get(opts, :platform_fee, 0)
@@ -179,25 +187,32 @@ defmodule Scalegraph.Business.Transactions do
     provider_fees = "#{access_provider_id}:fees"
 
     # Build entries based on whether there's a platform fee
-    entries = if platform_id && platform_fee > 0 do
-      platform_fees = "#{platform_id}:fees"
-      provider_amount = amount - platform_fee
+    entries =
+      if platform_id && platform_fee > 0 do
+        platform_fees = "#{platform_id}:fees"
+        provider_amount = amount - platform_fee
 
-      [
-        {payer_operating, -amount},           # Total debit from payer
-        {provider_fees, provider_amount},     # Access provider gets their cut
-        {platform_fees, platform_fee}         # Platform gets fee
-      ]
-    else
-      [
-        {payer_operating, -amount},           # Debit from payer
-        {provider_fees, amount}               # Credit to access provider
-      ]
-    end
+        [
+          # Total debit from payer
+          {payer_operating, -amount},
+          # Access provider gets their cut
+          {provider_fees, provider_amount},
+          # Platform gets fee
+          {platform_fees, platform_fee}
+        ]
+      else
+        [
+          # Debit from payer
+          {payer_operating, -amount},
+          # Credit to access provider
+          {provider_fees, amount}
+        ]
+      end
 
     case Ledger.transfer(entries, "ACCESS: #{reference}") do
       {:ok, tx} ->
         Logger.info("Access payment: #{reference} for #{format_amount(amount)} from #{payer_id}")
+
         result = %{
           transaction_id: tx.id,
           reference: reference,
@@ -206,11 +221,12 @@ defmodule Scalegraph.Business.Transactions do
           amount: amount
         }
 
-        result = if platform_fee > 0 do
-          Map.merge(result, %{platform: platform_id, platform_fee: platform_fee})
-        else
-          result
-        end
+        result =
+          if platform_fee > 0 do
+            Map.merge(result, %{platform: platform_id, platform_fee: platform_fee})
+          else
+            result
+          end
 
         {:ok, result}
 
@@ -236,7 +252,8 @@ defmodule Scalegraph.Business.Transactions do
         access_payment(payer_id, access_provider_id, amount, opts)
 
       {:ok, balance} ->
-        {:error, {:insufficient_funds, "Balance #{format_amount(balance)}, need #{format_amount(amount)}"}}
+        {:error,
+         {:insufficient_funds, "Balance #{format_amount(balance)}, need #{format_amount(amount)}"}}
 
       {:error, :not_found} ->
         {:error, {:account_not_found, payer_operating}}
@@ -247,8 +264,226 @@ defmodule Scalegraph.Business.Transactions do
   end
 
   # ============================================================================
+  # Loan Management
+  # ============================================================================
+
+  @doc """
+  Create a loan - lender provides funds and records obligation.
+
+  Creates a formal loan obligation using receivables/payables accounts:
+  - Lender's receivables increases (they are owed money)
+  - Borrower's payables decreases (they owe money)
+  - Money moves from lender's operating to borrower's operating
+
+  ## Parameters
+  - `lender_id` - The lender's participant ID (e.g., "seb")
+  - `borrower_id` - The borrower's participant ID (e.g., "salon_glamour")
+  - `amount` - Loan amount in cents
+  - `reference` - Loan reference (e.g., "LOAN-2024-001")
+
+  ## What happens (all atomic)
+  1. Money moves: lender's operating → borrower's operating
+  2. Record obligation: lender's receivables increases (positive = owed)
+  3. Record debt: borrower's payables decreases (negative = owes)
+
+  ## Example
+      iex> create_loan("seb", "salon_glamour", 150023, "LOAN-2024-001")
+      {:ok, %{transaction_id: "...", loan_ref: "LOAN-2024-001"}}
+  """
+  def create_loan(lender_id, borrower_id, amount, reference)
+      when is_binary(lender_id) and is_binary(borrower_id) and is_integer(amount) and amount > 0 do
+    alias Scalegraph.Participant.Core, as: Participant
+    alias Scalegraph.Ledger.Core, as: Ledger
+
+    lender_operating = "#{lender_id}:operating"
+    lender_receivables = "#{lender_id}:receivables"
+    borrower_operating = "#{borrower_id}:operating"
+    borrower_payables = "#{borrower_id}:payables"
+
+    # Ensure receivables/payables accounts exist
+    with {:ok, _} <- ensure_account_exists(lender_id, :receivables),
+         {:ok, _} <- ensure_account_exists(borrower_id, :payables) do
+      # All four entries in one atomic transaction
+      entries = [
+        # Money leaves lender
+        {lender_operating, -amount},
+        # Money arrives at borrower
+        {borrower_operating, amount},
+        # Record receivable (lender is owed)
+        {lender_receivables, amount},
+        # Record payable (borrower owes)
+        {borrower_payables, -amount}
+      ]
+
+      case Ledger.transfer(entries, "LOAN: #{reference}") do
+        {:ok, tx} ->
+          Logger.info("Loan created: #{reference} for #{format_amount(amount)}")
+
+          {:ok,
+           %{
+             transaction_id: tx.id,
+             loan_ref: reference,
+             lender: lender_id,
+             borrower: borrower_id,
+             amount: amount
+           }}
+
+        {:error, reason} ->
+          Logger.warning("Loan creation failed: #{inspect(reason)}")
+          {:error, reason}
+      end
+    end
+  end
+
+  @doc """
+  Repay a loan - borrower pays back and clears obligation.
+
+  Clears the loan obligation by reversing the receivables/payables entries.
+
+  ## Parameters
+  - `lender_id` - The lender's participant ID
+  - `borrower_id` - The borrower's participant ID
+  - `amount` - Repayment amount in cents
+  - `reference` - Repayment reference (e.g., "REPAY-LOAN-2024-001")
+
+  ## What happens (all atomic)
+  1. Money moves: borrower's operating → lender's operating
+  2. Clear receivable: lender's receivables decreases
+  3. Clear payable: borrower's payables increases (back toward zero)
+
+  ## Example
+      iex> repay_loan("seb", "salon_glamour", 150023, "REPAY-LOAN-2024-001")
+      {:ok, %{transaction_id: "...", repayment_ref: "REPAY-LOAN-2024-001"}}
+  """
+  def repay_loan(lender_id, borrower_id, amount, reference)
+      when is_binary(lender_id) and is_binary(borrower_id) and is_integer(amount) and amount > 0 do
+    alias Scalegraph.Ledger.Core, as: Ledger
+
+    lender_operating = "#{lender_id}:operating"
+    lender_receivables = "#{lender_id}:receivables"
+    borrower_operating = "#{borrower_id}:operating"
+    borrower_payables = "#{borrower_id}:payables"
+
+    # All four entries in one atomic transaction
+    entries = [
+      # Money leaves borrower
+      {borrower_operating, -amount},
+      # Money arrives at lender
+      {lender_operating, amount},
+      # Clear the receivable (lender no longer owed)
+      {lender_receivables, -amount},
+      # Clear the payable (borrower no longer owes)
+      {borrower_payables, amount}
+    ]
+
+    case Ledger.transfer(entries, "LOAN_REPAYMENT: #{reference}") do
+      {:ok, tx} ->
+        Logger.info("Loan repaid: #{reference} for #{format_amount(amount)}")
+
+        {:ok,
+         %{
+           transaction_id: tx.id,
+           repayment_ref: reference,
+           lender: lender_id,
+           borrower: borrower_id,
+           amount: amount
+         }}
+
+      {:error, reason} ->
+        Logger.warning("Loan repayment failed: #{inspect(reason)}")
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  Get outstanding loans for a lender.
+
+  Returns all borrowers who owe money to this lender.
+  Outstanding loans = positive balance in lender's receivables account.
+
+  ## Parameters
+  - `lender_id` - The lender's participant ID
+
+  ## Returns
+  - `{:ok, total_outstanding}` - Total amount outstanding in cents
+  - `{:ok, 0}` - No outstanding loans (account doesn't exist or has zero balance)
+  - `{:error, reason}` - Error getting account
+
+  ## Example
+      iex> get_outstanding_loans("seb")
+      {:ok, 150023}  # $1,500.23 outstanding
+  """
+  def get_outstanding_loans(lender_id) when is_binary(lender_id) do
+    alias Scalegraph.Ledger.Core, as: Ledger
+
+    receivables_account = "#{lender_id}:receivables"
+
+    case Ledger.get_balance(receivables_account) do
+      {:ok, balance} when balance > 0 -> {:ok, balance}
+      # Zero or negative = no outstanding loans
+      {:ok, _balance} -> {:ok, 0}
+      # Account doesn't exist = no loans
+      {:error, :not_found} -> {:ok, 0}
+      error -> error
+    end
+  end
+
+  @doc """
+  Get total debt for a borrower.
+
+  Returns total amount the borrower owes across all lenders.
+  Total debt = absolute value of negative balance in borrower's payables account.
+
+  ## Parameters
+  - `borrower_id` - The borrower's participant ID
+
+  ## Returns
+  - `{:ok, total_debt}` - Total debt in cents (always positive)
+  - `{:ok, 0}` - No debt (account doesn't exist or has zero/positive balance)
+  - `{:error, reason}` - Error getting account
+
+  ## Example
+      iex> get_total_debt("salon_glamour")
+      {:ok, 150023}  # $1,500.23 owed
+  """
+  def get_total_debt(borrower_id) when is_binary(borrower_id) do
+    alias Scalegraph.Ledger.Core, as: Ledger
+
+    payables_account = "#{borrower_id}:payables"
+
+    case Ledger.get_balance(payables_account) do
+      # Negative = debt
+      {:ok, balance} when balance < 0 -> {:ok, abs(balance)}
+      # Zero or positive = no debt
+      {:ok, _balance} -> {:ok, 0}
+      # Account doesn't exist = no debt
+      {:error, :not_found} -> {:ok, 0}
+      error -> error
+    end
+  end
+
+  # ============================================================================
   # Helpers
   # ============================================================================
+
+  # Ensure an account exists, create it if it doesn't
+  defp ensure_account_exists(participant_id, account_type) do
+    alias Scalegraph.Participant.Core, as: Participant
+    alias Scalegraph.Ledger.Core, as: Ledger
+
+    account_id = "#{participant_id}:#{account_type}"
+
+    case Ledger.get_account(account_id) do
+      {:ok, _account} ->
+        {:ok, :exists}
+
+      {:error, :not_found} ->
+        Participant.create_participant_account(participant_id, account_type, 0)
+
+      error ->
+        error
+    end
+  end
 
   defp format_amount(cents) do
     whole = div(cents, 100)

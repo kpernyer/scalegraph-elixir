@@ -2,20 +2,21 @@
 
 ## Pending
 
+### Participant Service Declarations
+- **Priority:** High
+- **Location:** Multiple files
+- **Details:**
+  - Add `services` field to Participant table (list of service identifiers)
+  - Update proto file to include services in Participant message
+  - Add Core functions: `add_service/2`, `remove_service/2`, `list_services/1`
+  - Add gRPC endpoints: `AddService`, `RemoveService`, `ListServices`
+  - Update participant record format and conversion functions
+
 ### Switch Mnesia to persistent storage (disc_copies)
 - **Priority:** After initial testing complete
+- **Status:** ✅ COMPLETED (Steps 1-3 done)
 - **Location:** `lib/scalegraph/storage/schema.ex`
-- **Details:**
-  - Change `ram_copies: [node()]` to `disc_copies: [node()]` for all three tables
-  - Configure Mnesia directory to `/home/kpernyer/db` to avoid node conflicts
-  - Add to `config/config.exs`:
-    ```elixir
-    config :mnesia, dir: ~c"/home/kpernyer/db"
-    ```
-  - Update `init/0` to create schema on disk:
-    ```elixir
-    :mnesia.create_schema([node()])
-    ```
+- **Remaining:**
   - Remove auto-seed from `application.ex` (data will persist)
   - Update `Justfile` with `init` task for first-time seeding
 

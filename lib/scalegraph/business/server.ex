@@ -112,6 +112,100 @@ defmodule Scalegraph.Business.Server do
     end
   end
 
+  @doc """
+  Create a loan - lender provides funds and records obligation.
+  """
+  def create_loan(request, _stream) do
+    case Transactions.create_loan(
+           request.lender_id,
+           request.borrower_id,
+           request.amount,
+           request.reference
+         ) do
+      {:ok, result} ->
+        %Proto.BusinessTransactionResponse{
+          transaction_id: result.transaction_id,
+          reference: result.loan_ref,
+          amount: result.amount,
+          platform_fee: 0,
+          status: "completed",
+          message: "Loan created: #{format_amount(result.amount)}"
+        }
+
+      {:error, {:not_found, message}} ->
+        business_error(:not_found, message)
+
+      {:error, {:insufficient_funds, message}} ->
+        business_error(:failed_precondition, message)
+
+      {:error, reason} ->
+        business_error(:internal, "Loan creation failed: #{inspect(reason)}")
+    end
+  end
+
+  @doc """
+  Repay a loan - borrower pays back and clears obligation.
+  """
+  def repay_loan(request, _stream) do
+    case Transactions.repay_loan(
+           request.lender_id,
+           request.borrower_id,
+           request.amount,
+           request.reference
+         ) do
+      {:ok, result} ->
+        %Proto.BusinessTransactionResponse{
+          transaction_id: result.transaction_id,
+          reference: result.repayment_ref,
+          amount: result.amount,
+          platform_fee: 0,
+          status: "completed",
+          message: "Loan repaid: #{format_amount(result.amount)}"
+        }
+
+      {:error, {:not_found, message}} ->
+        business_error(:not_found, message)
+
+      {:error, {:insufficient_funds, message}} ->
+        business_error(:failed_precondition, message)
+
+      {:error, reason} ->
+        business_error(:internal, "Loan repayment failed: #{inspect(reason)}")
+    end
+  end
+
+  @doc """
+  Get outstanding loans for a lender.
+  """
+  def get_outstanding_loans(request, _stream) do
+    case Transactions.get_outstanding_loans(request.lender_id) do
+      {:ok, total_outstanding} ->
+        %Proto.GetOutstandingLoansResponse{
+          lender_id: request.lender_id,
+          total_outstanding: total_outstanding
+        }
+
+      {:error, reason} ->
+        business_error(:internal, "Failed to get outstanding loans: #{inspect(reason)}")
+    end
+  end
+
+  @doc """
+  Get total debt for a borrower.
+  """
+  def get_total_debt(request, _stream) do
+    case Transactions.get_total_debt(request.borrower_id) do
+      {:ok, total_debt} ->
+        %Proto.GetTotalDebtResponse{
+          borrower_id: request.borrower_id,
+          total_debt: total_debt
+        }
+
+      {:error, reason} ->
+        business_error(:internal, "Failed to get total debt: #{inspect(reason)}")
+    end
+  end
+
   # Private helpers
 
   defp maybe_add_platform(opts, platform_id, platform_fee)
@@ -125,7 +219,7 @@ defmodule Scalegraph.Business.Server do
 
   defp business_error(status, message) do
     Logger.info("Business error [#{status}]: #{message}")
-    {:error, GRPC.RPCError.exception(status: status, message: message)}
+    raise GRPC.RPCError, status: status, message: message
   end
 
   defp format_amount(cents) do

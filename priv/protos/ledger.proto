@@ -33,6 +33,7 @@ message Participant {
   ParticipantRole role = 3;
   int64 created_at = 4;
   map<string, string> metadata = 5;
+  repeated string services = 6;  // Service identifiers this participant provides
 }
 
 // Account represents a ledger account
@@ -93,6 +94,25 @@ message GetParticipantAccountsRequest {
 
 message GetParticipantAccountsResponse {
   repeated Account accounts = 1;
+}
+
+// Service management messages
+message AddServiceRequest {
+  string participant_id = 1;
+  string service_id = 2;  // Service identifier (e.g., "access_control", "payment_processing")
+}
+
+message RemoveServiceRequest {
+  string participant_id = 1;
+  string service_id = 2;
+}
+
+message ListServicesRequest {
+  string participant_id = 1;
+}
+
+message ListServicesResponse {
+  repeated string services = 1;
 }
 
 // Account Request/Response messages
@@ -176,6 +196,44 @@ message AccessPaymentRequest {
   int64 platform_fee = 6;           // Optional platform fee in cents
 }
 
+// Create loan request - lender provides funds and records obligation
+message CreateLoanRequest {
+  string lender_id = 1;            // e.g., "seb"
+  string borrower_id = 2;          // e.g., "salon_glamour"
+  int64 amount = 3;                // Loan amount in cents
+  string reference = 4;             // Loan reference, e.g., "LOAN-2024-001"
+}
+
+// Repay loan request - borrower pays back and clears obligation
+message RepayLoanRequest {
+  string lender_id = 1;
+  string borrower_id = 2;
+  int64 amount = 3;                // Repayment amount in cents
+  string reference = 4;             // Repayment reference
+}
+
+// Get outstanding loans request
+message GetOutstandingLoansRequest {
+  string lender_id = 1;            // Lender's participant ID
+}
+
+// Get outstanding loans response
+message GetOutstandingLoansResponse {
+  string lender_id = 1;
+  int64 total_outstanding = 2;     // Total outstanding in cents
+}
+
+// Get total debt request
+message GetTotalDebtRequest {
+  string borrower_id = 1;          // Borrower's participant ID
+}
+
+// Get total debt response
+message GetTotalDebtResponse {
+  string borrower_id = 1;
+  int64 total_debt = 2;            // Total debt in cents
+}
+
 // Business transaction response
 message BusinessTransactionResponse {
   string transaction_id = 1;
@@ -193,6 +251,11 @@ service ParticipantService {
   rpc ListParticipants(ListParticipantsRequest) returns (ListParticipantsResponse);
   rpc CreateParticipantAccount(CreateParticipantAccountRequest) returns (Account);
   rpc GetParticipantAccounts(GetParticipantAccountsRequest) returns (GetParticipantAccountsResponse);
+  
+  // Service management
+  rpc AddService(AddServiceRequest) returns (Participant);
+  rpc RemoveService(RemoveServiceRequest) returns (Participant);
+  rpc ListServices(ListServicesRequest) returns (ListServicesResponse);
 }
 
 // Ledger service definition
@@ -217,4 +280,10 @@ service BusinessService {
 
   // Real-time access payment
   rpc AccessPayment(AccessPaymentRequest) returns (BusinessTransactionResponse);
+
+  // Loan management
+  rpc CreateLoan(CreateLoanRequest) returns (BusinessTransactionResponse);
+  rpc RepayLoan(RepayLoanRequest) returns (BusinessTransactionResponse);
+  rpc GetOutstandingLoans(GetOutstandingLoansRequest) returns (GetOutstandingLoansResponse);
+  rpc GetTotalDebt(GetTotalDebtRequest) returns (GetTotalDebtResponse);
 }

@@ -10,7 +10,9 @@ Scalegraph provides atomic multi-party transactions and account management for e
 
 - **Atomic Transactions**: Multi-party transfers with ACID guarantees via Mnesia
 - **Participant Management**: Organizations with defined roles in the ecosystem
+- **Participant Services**: Declare and discover capabilities (e.g., "financing", "access_control")
 - **Account Types**: Operating, receivables, payables, escrow, fees, and usage accounts
+- **Three-Party Settlements**: Embedded financing and complex multi-party atomic transfers
 - **gRPC API**: High-performance API for integration
 - **Rust TUI CLI**: Terminal interface for interacting with the ledger
 
@@ -170,13 +172,99 @@ Ledger.transfer([
 ], "payment_ref")
 ```
 
+### Declare Participant Services
+
+```elixir
+alias Scalegraph.Participant.Core, as: Participant
+
+# Declare services a participant provides
+Participant.add_service("seb", "financing")
+Participant.add_service("seb", "payment_processing")
+Participant.add_service("assa_abloy", "access_control")
+
+# List services for a participant
+Participant.list_services("seb")  # {:ok, ["financing", "payment_processing"]}
+```
+
+### Three-Party Atomic Settlement
+
+Scalegraph supports complex multi-party atomic transfers, including embedded financing:
+
+```elixir
+alias Scalegraph.Ledger.Core, as: Ledger
+
+# Three-party settlement with embedded financing
+# SEB provides financing, buyer contributes, seller receives full amount
+Ledger.transfer([
+  {"seb:operating", -150023},           # SEB provides $1,500.23 financing
+  {"salon_glamour:operating", -49977},  # Salon contributes $499.77
+  {"beauty_hosting:fees", 200000}       # Beauty Hosting receives $2,000.00
+], "embedded_financing_settlement")
+```
+
+**Key Features:**
+- ✅ **Atomic**: All or nothing - if any account lacks funds, entire transaction aborts
+- ✅ **Multi-party**: Supports any number of parties
+- ✅ **Balanced or unbalanced**: Sum doesn't need to be zero (allows fees, taxes, etc.)
+- ✅ **Audit trail**: Transaction recorded with all entries
+
+## Participant Services
+
+Participants can declare services they provide (e.g., "financing", "access_control", "payment_processing"). Services are **fully persisted** in the database and can be used for service discovery.
+
+### Storage
+- Services are stored as the **6th field** in the `scalegraph_participants` table
+- Field type: **list of strings** (service identifiers)
+- Persisted with `disc_copies` (persistent storage)
+- Backward compatible: old records default to empty list `[]`
+
+### Service Management
+
+```elixir
+alias Scalegraph.Participant.Core, as: Participant
+
+# Add a service
+Participant.add_service("seb", "financing")
+
+# Remove a service
+Participant.remove_service("seb", "financing")
+
+# List all services for a participant
+Participant.list_services("seb")  # {:ok, ["financing", "payment_processing"]}
+```
+
+### Service Discovery
+
+Find participants that provide a specific service:
+
+```elixir
+# Get all participants
+{:ok, participants} = Participant.list_participants()
+
+# Filter for financing providers
+financing_providers = Enum.filter(participants, fn p -> 
+  "financing" in (p.services || [])
+end)
+```
+
+### gRPC Endpoints
+
+- `AddService` - Add a service to a participant
+- `RemoveService` - Remove a service from a participant
+- `ListServices` - List all services for a participant
+
 ## Configuration
 
 In `config/config.exs`:
 
 ```elixir
 config :scalegraph,
-  grpc_port: 50051
+  grpc_port: 50051,
+  # Mnesia storage type: :disc_copies (persistent) or :ram_copies (in-memory)
+  mnesia_storage: :disc_copies
+
+# Mnesia directory for disc_copies
+config :mnesia, dir: ~c"./priv/mnesia_data"
 ```
 
 ## Testing

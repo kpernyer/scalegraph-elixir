@@ -23,11 +23,16 @@ defmodule Scalegraph.Storage.Schema do
   """
   def participant_roles do
     [
-      :access_provider,      # e.g., ASSA ABLOY
-      :banking_partner,      # e.g., SEB
-      :ecosystem_partner,    # e.g., Beauty Hosting
-      :supplier,             # e.g., Schampo etc, Clipper Oy
-      :equipment_provider    # e.g., Hairgrowers United (pay-per-use)
+      # e.g., ASSA ABLOY
+      :access_provider,
+      # e.g., SEB
+      :banking_partner,
+      # e.g., Beauty Hosting
+      :ecosystem_partner,
+      # e.g., Schampo etc, Clipper Oy
+      :supplier,
+      # e.g., Hairgrowers United (pay-per-use)
+      :equipment_provider
     ]
   end
 
@@ -36,10 +41,26 @@ defmodule Scalegraph.Storage.Schema do
   Call this during application startup.
   """
   def init do
-    # Start Mnesia (in-memory mode for simplicity)
+    storage_type = storage_type()
+
+    # Create schema on disk if using disc_copies
+    if storage_type == :disc_copies do
+      case :mnesia.create_schema([node()]) do
+        :ok ->
+          Logger.info("Created Mnesia schema on disk")
+
+        {:error, {_, {:already_exists, _}}} ->
+          Logger.info("Mnesia schema already exists on disk")
+
+        {:error, reason} ->
+          Logger.error("Failed to create Mnesia schema: #{inspect(reason)}")
+      end
+    end
+
+    # Start Mnesia
     :mnesia.start()
 
-    # Create tables (ram_copies = in-memory, no persistence issues)
+    # Create tables with configured storage type
     create_participants_table()
     create_accounts_table()
     create_transactions_table()
@@ -47,16 +68,30 @@ defmodule Scalegraph.Storage.Schema do
     # Wait for tables to be ready
     :mnesia.wait_for_tables([@participants_table, @accounts_table, @transactions_table], 30_000)
 
-    Logger.info("Mnesia tables ready (in-memory mode)")
+    storage_desc =
+      if storage_type == :disc_copies,
+        do: "persistent (disc_copies)",
+        else: "in-memory (ram_copies)"
+
+    Logger.info("Mnesia tables ready (#{storage_desc})")
     :ok
   end
 
+  # Get storage type from config, default to disc_copies
+  defp storage_type do
+    Application.get_env(:scalegraph, :mnesia_storage, :disc_copies)
+  end
+
   defp create_participants_table do
-    case :mnesia.create_table(@participants_table, [
-      attributes: [:id, :name, :role, :created_at, :metadata],
-      ram_copies: [node()],
-      type: :set
-    ]) do
+    storage = storage_type()
+
+    table_opts =
+      [
+        attributes: [:id, :name, :role, :created_at, :metadata, :services],
+        type: :set
+      ] ++ [{storage, [node()]}]
+
+    case :mnesia.create_table(@participants_table, table_opts) do
       {:atomic, :ok} ->
         Logger.info("Created #{@participants_table} table")
 
@@ -69,12 +104,16 @@ defmodule Scalegraph.Storage.Schema do
   end
 
   defp create_accounts_table do
-    case :mnesia.create_table(@accounts_table, [
-      attributes: [:id, :participant_id, :account_type, :balance, :created_at, :metadata],
-      ram_copies: [node()],
-      type: :set,
-      index: [:participant_id]
-    ]) do
+    storage = storage_type()
+
+    table_opts =
+      [
+        attributes: [:id, :participant_id, :account_type, :balance, :created_at, :metadata],
+        type: :set,
+        index: [:participant_id]
+      ] ++ [{storage, [node()]}]
+
+    case :mnesia.create_table(@accounts_table, table_opts) do
       {:atomic, :ok} ->
         Logger.info("Created #{@accounts_table} table")
 
@@ -87,11 +126,15 @@ defmodule Scalegraph.Storage.Schema do
   end
 
   defp create_transactions_table do
-    case :mnesia.create_table(@transactions_table, [
-      attributes: [:id, :type, :entries, :timestamp, :reference],
-      ram_copies: [node()],
-      type: :set
-    ]) do
+    storage = storage_type()
+
+    table_opts =
+      [
+        attributes: [:id, :type, :entries, :timestamp, :reference],
+        type: :set
+      ] ++ [{storage, [node()]}]
+
+    case :mnesia.create_table(@transactions_table, table_opts) do
       {:atomic, :ok} ->
         Logger.info("Created #{@transactions_table} table")
 

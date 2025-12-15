@@ -29,10 +29,11 @@ use ledger::{
     business_service_client::BusinessServiceClient,
     ledger_service_client::LedgerServiceClient,
     participant_service_client::ParticipantServiceClient,
-    AccessPaymentRequest, CreateParticipantAccountRequest, CreateParticipantRequest,
-    GetBalanceRequest, GetParticipantAccountsRequest, ListParticipantsRequest,
-    ListTransactionsRequest, PayInvoiceRequest, PurchaseInvoiceRequest, TransferEntry,
-    TransferRequest,
+    AccessPaymentRequest, CreateLoanRequest, CreateParticipantAccountRequest,
+    CreateParticipantRequest, GetBalanceRequest, GetOutstandingLoansRequest,
+    GetParticipantAccountsRequest, GetTotalDebtRequest, ListParticipantsRequest,
+    ListTransactionsRequest, PayInvoiceRequest, PurchaseInvoiceRequest, RepayLoanRequest,
+    TransferEntry, TransferRequest,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -323,6 +324,82 @@ impl ScalegraphClient {
             "message": result.message,
         }))
     }
+
+    async fn create_loan(
+        &mut self,
+        lender_id: &str,
+        borrower_id: &str,
+        amount: i64,
+        reference: &str,
+    ) -> Result<Value> {
+        let request = CreateLoanRequest {
+            lender_id: lender_id.to_string(),
+            borrower_id: borrower_id.to_string(),
+            amount,
+            reference: reference.to_string(),
+        };
+        let response = self.business.create_loan(request).await?;
+        let result = response.into_inner();
+        Ok(json!({
+            "transaction_id": result.transaction_id,
+            "reference": result.reference,
+            "amount": format_balance(result.amount),
+            "amount_cents": result.amount,
+            "status": result.status,
+            "message": result.message,
+        }))
+    }
+
+    async fn repay_loan(
+        &mut self,
+        lender_id: &str,
+        borrower_id: &str,
+        amount: i64,
+        reference: &str,
+    ) -> Result<Value> {
+        let request = RepayLoanRequest {
+            lender_id: lender_id.to_string(),
+            borrower_id: borrower_id.to_string(),
+            amount,
+            reference: reference.to_string(),
+        };
+        let response = self.business.repay_loan(request).await?;
+        let result = response.into_inner();
+        Ok(json!({
+            "transaction_id": result.transaction_id,
+            "reference": result.reference,
+            "amount": format_balance(result.amount),
+            "amount_cents": result.amount,
+            "status": result.status,
+            "message": result.message,
+        }))
+    }
+
+    async fn get_outstanding_loans(&mut self, lender_id: &str) -> Result<Value> {
+        let request = GetOutstandingLoansRequest {
+            lender_id: lender_id.to_string(),
+        };
+        let response = self.business.get_outstanding_loans(request).await?;
+        let result = response.into_inner();
+        Ok(json!({
+            "lender_id": result.lender_id,
+            "total_outstanding": format_balance(result.total_outstanding),
+            "total_outstanding_cents": result.total_outstanding,
+        }))
+    }
+
+    async fn get_total_debt(&mut self, borrower_id: &str) -> Result<Value> {
+        let request = GetTotalDebtRequest {
+            borrower_id: borrower_id.to_string(),
+        };
+        let response = self.business.get_total_debt(request).await?;
+        let result = response.into_inner();
+        Ok(json!({
+            "borrower_id": result.borrower_id,
+            "total_debt": format_balance(result.total_debt),
+            "total_debt_cents": result.total_debt,
+        }))
+    }
 }
 
 // ============================================================================
@@ -601,6 +678,86 @@ fn get_tools_list() -> Value {
                     },
                     "required": ["payer_id", "access_provider_id", "amount_cents", "reference"]
                 }
+            },
+            {
+                "name": "create_loan",
+                "description": "Create a loan with formal obligation tracking. Lender provides funds and records receivables/payables. All 4 entries (lender operating, borrower operating, lender receivables, borrower payables) are atomic.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "lender_id": {
+                            "type": "string",
+                            "description": "Lender participant ID (e.g., 'seb')"
+                        },
+                        "borrower_id": {
+                            "type": "string",
+                            "description": "Borrower participant ID (e.g., 'salon_glamour')"
+                        },
+                        "amount_cents": {
+                            "type": "integer",
+                            "description": "Loan amount in cents (e.g., 150023 for $1,500.23)"
+                        },
+                        "reference": {
+                            "type": "string",
+                            "description": "Loan reference (e.g., 'LOAN-2024-001')"
+                        }
+                    },
+                    "required": ["lender_id", "borrower_id", "amount_cents", "reference"]
+                }
+            },
+            {
+                "name": "repay_loan",
+                "description": "Repay a loan and clear obligations. Reverses receivables/payables entries atomically.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "lender_id": {
+                            "type": "string",
+                            "description": "Lender participant ID"
+                        },
+                        "borrower_id": {
+                            "type": "string",
+                            "description": "Borrower participant ID"
+                        },
+                        "amount_cents": {
+                            "type": "integer",
+                            "description": "Repayment amount in cents"
+                        },
+                        "reference": {
+                            "type": "string",
+                            "description": "Repayment reference (e.g., 'REPAY-LOAN-2024-001')"
+                        }
+                    },
+                    "required": ["lender_id", "borrower_id", "amount_cents", "reference"]
+                }
+            },
+            {
+                "name": "get_outstanding_loans",
+                "description": "Get total outstanding loans for a lender. Returns the positive balance in lender's receivables account.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "lender_id": {
+                            "type": "string",
+                            "description": "Lender participant ID (e.g., 'seb')"
+                        }
+                    },
+                    "required": ["lender_id"]
+                }
+            },
+            {
+                "name": "get_total_debt",
+                "description": "Get total debt for a borrower. Returns the absolute value of negative balance in borrower's payables account.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "borrower_id": {
+                            "type": "string",
+                            "description": "Borrower participant ID (e.g., 'salon_glamour')"
+                        }
+                    },
+                    "required": ["borrower_id"]
+                }
             }
         ]
     })
@@ -765,6 +922,48 @@ async fn handle_tool_call(client: &mut ScalegraphClient, name: &str, args: &Valu
                     platform_fee,
                 )
                 .await
+        }
+
+        "create_loan" => {
+            let lender_id = args.get("lender_id").and_then(|v| v.as_str()).unwrap_or("");
+            let borrower_id = args.get("borrower_id").and_then(|v| v.as_str()).unwrap_or("");
+            let amount = args
+                .get("amount_cents")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
+            let reference = args
+                .get("reference")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            client
+                .create_loan(lender_id, borrower_id, amount, reference)
+                .await
+        }
+
+        "repay_loan" => {
+            let lender_id = args.get("lender_id").and_then(|v| v.as_str()).unwrap_or("");
+            let borrower_id = args.get("borrower_id").and_then(|v| v.as_str()).unwrap_or("");
+            let amount = args
+                .get("amount_cents")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
+            let reference = args
+                .get("reference")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            client
+                .repay_loan(lender_id, borrower_id, amount, reference)
+                .await
+        }
+
+        "get_outstanding_loans" => {
+            let lender_id = args.get("lender_id").and_then(|v| v.as_str()).unwrap_or("");
+            client.get_outstanding_loans(lender_id).await
+        }
+
+        "get_total_debt" => {
+            let borrower_id = args.get("borrower_id").and_then(|v| v.as_str()).unwrap_or("");
+            client.get_total_debt(borrower_id).await
         }
 
         _ => Ok(json!({"error": format!("Unknown tool: {}", name)})),
