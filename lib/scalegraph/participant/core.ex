@@ -58,9 +58,19 @@ defmodule Scalegraph.Participant.Core do
         end)
 
       case result do
-        {:atomic, {:ok, participant}} -> {:ok, participant}
-        {:aborted, {:error, reason}} -> {:error, reason}
-        {:aborted, reason} -> {:error, reason}
+        {:atomic, {:ok, participant}} ->
+          {:ok, participant}
+
+        {:aborted, {:error, reason}} ->
+          {:error, reason}
+
+        {:aborted, {:bad_type, record}} ->
+          {:error,
+           {:schema_mismatch,
+            "Table schema mismatch. Record: #{inspect(record)}. Expected 6 attributes: [:id, :name, :role, :created_at, :metadata, :services]. The table may need to be recreated with the correct schema."}}
+
+        {:aborted, reason} ->
+          {:error, reason}
       end
     end
   end
@@ -296,9 +306,19 @@ defmodule Scalegraph.Participant.Core do
       end)
 
     case result do
-      {:atomic, {:ok, participant}} -> {:ok, participant}
-      {:aborted, {:error, reason}} -> {:error, reason}
-      {:aborted, reason} -> {:error, reason}
+      {:atomic, {:ok, participant}} ->
+        {:ok, participant}
+
+      {:aborted, {:error, reason}} ->
+        {:error, reason}
+
+      {:aborted, {:bad_type, record}} ->
+        {:error,
+         {:schema_mismatch,
+          "Table schema mismatch. Record: #{inspect(record)}. Expected 6 attributes: [:id, :name, :role, :created_at, :metadata, :services]. The table may need to be recreated with the correct schema."}}
+
+      {:aborted, reason} ->
+        {:error, reason}
     end
   end
 
@@ -346,9 +366,19 @@ defmodule Scalegraph.Participant.Core do
       end)
 
     case result do
-      {:atomic, {:ok, participant}} -> {:ok, participant}
-      {:aborted, {:error, reason}} -> {:error, reason}
-      {:aborted, reason} -> {:error, reason}
+      {:atomic, {:ok, participant}} ->
+        {:ok, participant}
+
+      {:aborted, {:error, reason}} ->
+        {:error, reason}
+
+      {:aborted, {:bad_type, record}} ->
+        {:error,
+         {:schema_mismatch,
+          "Table schema mismatch. Record: #{inspect(record)}. Expected 6 attributes: [:id, :name, :role, :created_at, :metadata, :services]. The table may need to be recreated with the correct schema."}}
+
+      {:aborted, reason} ->
+        {:error, reason}
     end
   end
 

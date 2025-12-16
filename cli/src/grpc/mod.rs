@@ -5,13 +5,12 @@ pub mod ledger {
 
 use anyhow::Result;
 use ledger::{
-    business_service_client::BusinessServiceClient,
-    ledger_service_client::LedgerServiceClient,
-    participant_service_client::ParticipantServiceClient,
-    AccessPaymentRequest, Account, BusinessTransactionResponse, CreditRequest, DebitRequest,
-    GetAccountRequest, GetBalanceRequest, GetParticipantAccountsRequest, GetParticipantRequest,
-    ListParticipantsRequest, ListTransactionsRequest, Participant, PayInvoiceRequest,
-    PurchaseInvoiceRequest, Transaction, TransferEntry, TransferRequest,
+    business_service_client::BusinessServiceClient, ledger_service_client::LedgerServiceClient,
+    participant_service_client::ParticipantServiceClient, AccessPaymentRequest, Account,
+    BusinessTransactionResponse, CreditRequest, DebitRequest, GetAccountRequest, GetBalanceRequest,
+    GetParticipantAccountsRequest, GetParticipantRequest, ListParticipantsRequest,
+    ListTransactionsRequest, Participant, PayInvoiceRequest, PurchaseInvoiceRequest, Transaction,
+    TransferEntry, TransferRequest,
 };
 use tonic::transport::Channel;
 
@@ -26,9 +25,7 @@ pub struct ScalegraphClient {
 
 impl ScalegraphClient {
     pub async fn connect(addr: &str) -> Result<Self> {
-        let channel = Channel::from_shared(addr.to_string())?
-            .connect()
-            .await?;
+        let channel = Channel::from_shared(addr.to_string())?.connect().await?;
 
         Ok(Self {
             ledger: LedgerServiceClient::new(channel.clone()),
@@ -39,7 +36,10 @@ impl ScalegraphClient {
 
     // Participant operations
 
-    pub async fn list_participants(&mut self, role: Option<ParticipantRole>) -> Result<Vec<Participant>> {
+    pub async fn list_participants(
+        &mut self,
+        role: Option<ParticipantRole>,
+    ) -> Result<Vec<Participant>> {
         let request = ListParticipantsRequest {
             role: role.map(|r| r as i32).unwrap_or(0),
         };
@@ -85,7 +85,12 @@ impl ScalegraphClient {
     }
 
     #[allow(dead_code)]
-    pub async fn credit(&mut self, account_id: &str, amount: i64, reference: &str) -> Result<Transaction> {
+    pub async fn credit(
+        &mut self,
+        account_id: &str,
+        amount: i64,
+        reference: &str,
+    ) -> Result<Transaction> {
         let request = CreditRequest {
             account_id: account_id.to_string(),
             amount,
@@ -96,7 +101,12 @@ impl ScalegraphClient {
     }
 
     #[allow(dead_code)]
-    pub async fn debit(&mut self, account_id: &str, amount: i64, reference: &str) -> Result<Transaction> {
+    pub async fn debit(
+        &mut self,
+        account_id: &str,
+        amount: i64,
+        reference: &str,
+    ) -> Result<Transaction> {
         let request = DebitRequest {
             account_id: account_id.to_string(),
             amount,
@@ -106,7 +116,11 @@ impl ScalegraphClient {
         Ok(response.into_inner())
     }
 
-    pub async fn transfer(&mut self, entries: Vec<(String, i64)>, reference: &str) -> Result<Transaction> {
+    pub async fn transfer(
+        &mut self,
+        entries: Vec<(String, i64)>,
+        reference: &str,
+    ) -> Result<Transaction> {
         let request = TransferRequest {
             entries: entries
                 .into_iter()
@@ -118,7 +132,11 @@ impl ScalegraphClient {
         Ok(response.into_inner())
     }
 
-    pub async fn list_transactions(&mut self, limit: Option<i32>, account_id: Option<&str>) -> Result<Vec<Transaction>> {
+    pub async fn list_transactions(
+        &mut self,
+        limit: Option<i32>,
+        account_id: Option<&str>,
+    ) -> Result<Vec<Transaction>> {
         let request = ListTransactionsRequest {
             limit: limit.unwrap_or(50),
             account_id: account_id.unwrap_or("").to_string(),

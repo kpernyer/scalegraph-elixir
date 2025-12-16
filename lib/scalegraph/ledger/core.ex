@@ -129,8 +129,22 @@ defmodule Scalegraph.Ledger.Core do
             [{_table, ^account_id, participant_id, account_type, balance, created_at, metadata}] ->
               new_balance = balance + amount
 
-              if new_balance < 0 do
-                :mnesia.abort({:insufficient_funds, account_id, balance, amount})
+              # Allow negative balances for receivables and payables (they track obligations)
+              # Prevent negative balances for other account types (operating, escrow, fees, usage, standalone)
+              case account_type do
+                :receivables ->
+                  # Receivables can go negative (e.g., if you owe someone)
+                  :ok
+
+                :payables ->
+                  # Payables can go negative (e.g., when you owe money)
+                  :ok
+
+                _ ->
+                  # All other account types must maintain non-negative balance
+                  if new_balance < 0 do
+                    :mnesia.abort({:insufficient_funds, account_id, balance, amount})
+                  end
               end
 
               # Update account balance
@@ -193,8 +207,22 @@ defmodule Scalegraph.Ledger.Core do
           [{_table, ^account_id, participant_id, account_type, balance, created_at, metadata}] ->
             new_balance = balance + amount
 
-            if new_balance < 0 do
-              :mnesia.abort({:insufficient_funds, balance, amount})
+            # Allow negative balances for receivables and payables (they track obligations)
+            # Prevent negative balances for other account types (operating, escrow, fees, usage, standalone)
+            case account_type do
+              :receivables ->
+                # Receivables can go negative (e.g., if you owe someone)
+                :ok
+
+              :payables ->
+                # Payables can go negative (e.g., when you owe money)
+                :ok
+
+              _ ->
+                # All other account types must maintain non-negative balance
+                if new_balance < 0 do
+                  :mnesia.abort({:insufficient_funds, balance, amount})
+                end
             end
 
             # Update account

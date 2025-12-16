@@ -78,8 +78,10 @@ defmodule Scalegraph.Ledger.CoreTest do
       {:ok, _} = Core.create_account("bob", 500)
 
       entries = [
-        {"alice", -200},  # debit alice
-        {"bob", 200}      # credit bob
+        # debit alice
+        {"alice", -200},
+        # credit bob
+        {"bob", 200}
       ]
 
       assert {:ok, tx} = Core.transfer(entries, "payment")
@@ -121,7 +123,8 @@ defmodule Scalegraph.Ledger.CoreTest do
       {:ok, _} = Core.create_account("bob", 50)
 
       entries = [
-        {"alice", -500},  # More than alice has
+        # More than alice has
+        {"alice", -500},
         {"bob", 500}
       ]
 

@@ -57,6 +57,13 @@ defmodule Scalegraph.Participant.Server do
       {:error, {:invalid_role, role, valid_roles}} ->
         business_error(:invalid_argument, "Invalid role #{role}. Valid: #{inspect(valid_roles)}")
 
+      {:error, {:schema_mismatch, message}} ->
+        Logger.error("Schema mismatch error: #{message}")
+        business_error(
+          :failed_precondition,
+          "Database schema mismatch. The participants table may have been created with an older schema. Try recreating the table or clearing the database."
+        )
+
       {:error, reason} ->
         system_error("Failed to create participant", reason)
     end
@@ -167,6 +174,13 @@ defmodule Scalegraph.Participant.Server do
           "Service #{request.service_id} already declared for participant #{request.participant_id}"
         )
 
+      {:error, {:schema_mismatch, message}} ->
+        Logger.error("Schema mismatch error: #{message}")
+        business_error(
+          :failed_precondition,
+          "Database schema mismatch. The participants table may have been created with an older schema. Try recreating the table or clearing the database."
+        )
+
       {:error, reason} ->
         system_error("Failed to add service", reason)
     end
@@ -191,6 +205,13 @@ defmodule Scalegraph.Participant.Server do
         business_error(
           :not_found,
           "Service #{request.service_id} not found for participant #{request.participant_id}"
+        )
+
+      {:error, {:schema_mismatch, message}} ->
+        Logger.error("Schema mismatch error: #{message}")
+        business_error(
+          :failed_precondition,
+          "Database schema mismatch. The participants table may have been created with an older schema. Try recreating the table or clearing the database."
         )
 
       {:error, reason} ->

@@ -30,7 +30,9 @@ fn draw_tabs(f: &mut Frame, app: &App, area: Rect) {
         .map(|(i, v)| {
             let num = format!("[{}] ", i + 1);
             let style = if *v == app.current_view {
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::Gray)
             };
@@ -42,9 +44,18 @@ fn draw_tabs(f: &mut Frame, app: &App, area: Rect) {
         .collect();
 
     let tabs = Tabs::new(titles)
-        .block(Block::default().borders(Borders::ALL).title(" Scalegraph Ledger  [←/→ or 1-4 to switch tabs] "))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Scalegraph Ledger  [←/→ or 1-4 to switch tabs] "),
+        )
         .highlight_style(Style::default().fg(Color::Yellow))
-        .select(View::all().iter().position(|v| *v == app.current_view).unwrap_or(0));
+        .select(
+            View::all()
+                .iter()
+                .position(|v| *v == app.current_view)
+                .unwrap_or(0),
+        );
 
     f.render_widget(tabs, area);
 }
@@ -69,18 +80,14 @@ fn draw_participants(f: &mut Frame, app: &mut App, area: Rect) {
             let content = Line::from(vec![
                 Span::styled(
                     format!("{:<20}", p.name),
-                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
                 ),
                 Span::raw(" "),
-                Span::styled(
-                    format!("[{}]", p.role),
-                    Style::default().fg(Color::Cyan),
-                ),
+                Span::styled(format!("[{}]", p.role), Style::default().fg(Color::Cyan)),
                 Span::raw(" "),
-                Span::styled(
-                    format!("({})", p.id),
-                    Style::default().fg(Color::DarkGray),
-                ),
+                Span::styled(format!("({})", p.id), Style::default().fg(Color::DarkGray)),
             ]);
             ListItem::new(content)
         })
@@ -116,9 +123,21 @@ fn draw_accounts(f: &mut Frame, app: &mut App, area: Rect) {
     };
 
     let header = Row::new(vec![
-        Cell::from("Account ID").style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-        Cell::from("Type").style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-        Cell::from("Balance").style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Cell::from("Account ID").style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Cell::from("Type").style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Cell::from("Balance").style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
     ])
     .height(1)
     .bottom_margin(1);
@@ -148,7 +167,11 @@ fn draw_accounts(f: &mut Frame, app: &mut App, area: Rect) {
             let prefix = if selected { "▶ " } else { "  " };
             Row::new(vec![
                 Cell::from(format!("{}{}", prefix, acc.id)),
-                Cell::from(acc.account_type.clone()).style(Style::default().fg(if selected { Color::White } else { Color::Cyan })),
+                Cell::from(acc.account_type.clone()).style(Style::default().fg(if selected {
+                    Color::White
+                } else {
+                    Color::Cyan
+                })),
                 Cell::from(grpc::format_balance(acc.balance))
                     .style(Style::default().fg(balance_color)),
             ])
@@ -162,19 +185,20 @@ fn draw_accounts(f: &mut Frame, app: &mut App, area: Rect) {
         Constraint::Percentage(30),
     ];
 
-    let table = Table::new(rows, widths)
-        .header(header)
-        .block(Block::default()
+    let table = Table::new(rows, widths).header(header).block(
+        Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::Yellow))
-            .title(title));
+            .title(title),
+    );
 
     f.render_widget(table, area);
 }
 
 fn draw_transfer(f: &mut Frame, app: &App, area: Rect) {
     // Check if we should show suggestions
-    let show_suggestions = app.transfer_form.show_suggestions && app.transfer_form.selected_field <= 1;
+    let show_suggestions =
+        app.transfer_form.show_suggestions && app.transfer_form.selected_field <= 1;
     let suggestions = if show_suggestions {
         app.get_account_suggestions()
     } else {
@@ -184,19 +208,22 @@ fn draw_transfer(f: &mut Frame, app: &App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),  // From
-            Constraint::Length(3),  // To
-            Constraint::Length(3),  // Amount
-            Constraint::Length(3),  // Reference
-            Constraint::Length(2),  // Submit hint
-            Constraint::Min(0),     // Suggestions or Messages
+            Constraint::Length(3), // From
+            Constraint::Length(3), // To
+            Constraint::Length(3), // Amount
+            Constraint::Length(3), // Reference
+            Constraint::Length(2), // Submit hint
+            Constraint::Min(0),    // Suggestions or Messages
         ])
         .margin(1)
         .split(area);
 
     let current_field = app.transfer_form.selected_field + 1;
     let title = if show_suggestions && !suggestions.is_empty() {
-        format!(" Transfer (Field {}/4) - Tab: cycle accounts, Enter: accept ", current_field)
+        format!(
+            " Transfer (Field {}/4) - Tab: cycle accounts, Enter: accept ",
+            current_field
+        )
     } else {
         format!(" Transfer (Field {}/4) ", current_field)
     };
@@ -207,10 +234,26 @@ fn draw_transfer(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(block, area);
 
     let fields = [
-        ("From Account", &app.transfer_form.from_account, "Tab to browse accounts"),
-        ("To Account", &app.transfer_form.to_account, "Tab to browse accounts"),
-        ("Amount", &app.transfer_form.amount, "Amount in cents (e.g., 1000 = 10.00)"),
-        ("Reference", &app.transfer_form.reference, "Optional reference text"),
+        (
+            "From Account",
+            &app.transfer_form.from_account,
+            "Tab to browse accounts",
+        ),
+        (
+            "To Account",
+            &app.transfer_form.to_account,
+            "Tab to browse accounts",
+        ),
+        (
+            "Amount",
+            &app.transfer_form.amount,
+            "Amount in cents (e.g., 1000 = 10.00)",
+        ),
+        (
+            "Reference",
+            &app.transfer_form.reference,
+            "Optional reference text",
+        ),
     ];
 
     for (i, (label, value, hint)) in fields.iter().enumerate() {
@@ -218,8 +261,12 @@ fn draw_transfer(f: &mut Frame, app: &App, area: Rect) {
 
         let (label_style, input_style, border_color) = if is_selected {
             (
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
-                Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
                 Color::Yellow,
             )
         } else {
@@ -244,10 +291,11 @@ fn draw_transfer(f: &mut Frame, app: &App, area: Rect) {
             Span::styled(display_value, input_style),
         ]);
 
-        let paragraph = Paragraph::new(text)
-            .block(Block::default()
+        let paragraph = Paragraph::new(text).block(
+            Block::default()
                 .borders(Borders::BOTTOM)
-                .border_style(Style::default().fg(border_color)));
+                .border_style(Style::default().fg(border_color)),
+        );
         f.render_widget(paragraph, chunks[i]);
     }
 
@@ -287,7 +335,9 @@ fn draw_transfer(f: &mut Frame, app: &App, area: Rect) {
                 let is_current = app.transfer_form.suggestion_index == Some(i);
                 let prefix = if is_current { "▶ " } else { "  " };
                 let style = if is_current {
-                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(Color::White)
                 };
@@ -295,11 +345,18 @@ fn draw_transfer(f: &mut Frame, app: &App, area: Rect) {
                     Span::styled(prefix, style),
                     Span::styled(&acc.id, style),
                     Span::styled(" ", Style::default()),
-                    Span::styled(format!("[{}]", acc.account_type), Style::default().fg(Color::Cyan)),
+                    Span::styled(
+                        format!("[{}]", acc.account_type),
+                        Style::default().fg(Color::Cyan),
+                    ),
                     Span::styled(" ", Style::default()),
                     Span::styled(
                         grpc::format_balance(acc.balance),
-                        Style::default().fg(if acc.balance >= 0 { Color::Green } else { Color::Red }),
+                        Style::default().fg(if acc.balance >= 0 {
+                            Color::Green
+                        } else {
+                            Color::Red
+                        }),
                     ),
                 ])
             })
@@ -312,11 +369,12 @@ fn draw_transfer(f: &mut Frame, app: &App, area: Rect) {
             format!(" Accounts ({}) ", suggestion_count)
         };
 
-        let suggestion_widget = Paragraph::new(suggestion_items)
-            .block(Block::default()
+        let suggestion_widget = Paragraph::new(suggestion_items).block(
+            Block::default()
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Cyan))
-                .title(title));
+                .title(title),
+        );
         f.render_widget(suggestion_widget, chunks[5]);
     } else if let Some(ref err) = app.transfer_form.error {
         let msg = Paragraph::new(Line::from(vec![
@@ -392,9 +450,7 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
                     " ↑/↓:Fields  Enter:Execute  Esc:Clear  ←/→:Tabs  q:Quit ".to_string()
                 }
             }
-            View::History => {
-                " r:Refresh  q:Quit ".to_string()
-            }
+            View::History => " r:Refresh  q:Quit ".to_string(),
         }
     };
 
@@ -413,9 +469,16 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
         .block(Block::default().borders(Borders::ALL).title(" Keys "));
 
     // Right: global info
-    let info = format!(" {} participants | {} accounts ", app.participants.len(), app.accounts.len());
-    let info_widget = Paragraph::new(Line::from(Span::styled(info, Style::default().fg(Color::DarkGray))))
-        .block(Block::default().borders(Borders::ALL).title(" Info "));
+    let info = format!(
+        " {} participants | {} accounts ",
+        app.participants.len(),
+        app.accounts.len()
+    );
+    let info_widget = Paragraph::new(Line::from(Span::styled(
+        info,
+        Style::default().fg(Color::DarkGray),
+    )))
+    .block(Block::default().borders(Borders::ALL).title(" Info "));
 
     f.render_widget(help, chunks[0]);
     f.render_widget(info_widget, chunks[1]);

@@ -53,7 +53,16 @@ defmodule Scalegraph.Ledger.Server do
         account_to_proto(account)
 
       {:error, :not_found} ->
-        business_error(:not_found, "Account not found: #{request.account_id}")
+        case String.split(request.account_id, ":") do
+          [participant_id, account_type] ->
+            business_error(
+              :not_found,
+              "Account not found: #{request.account_id}. The #{account_type} account for participant '#{participant_id}' does not exist. Create it using CreateParticipantAccount with account_type=#{String.upcase(account_type)}."
+            )
+
+          _ ->
+            business_error(:not_found, "Account not found: #{request.account_id}")
+        end
 
       {:error, reason} ->
         system_error("Failed to get account", reason)
@@ -72,7 +81,16 @@ defmodule Scalegraph.Ledger.Server do
         }
 
       {:error, :not_found} ->
-        business_error(:not_found, "Account not found: #{request.account_id}")
+        case String.split(request.account_id, ":") do
+          [participant_id, account_type] ->
+            business_error(
+              :not_found,
+              "Account not found: #{request.account_id}. The #{account_type} account for participant '#{participant_id}' does not exist. Create it using CreateParticipantAccount with account_type=#{String.upcase(account_type)}."
+            )
+
+          _ ->
+            business_error(:not_found, "Account not found: #{request.account_id}")
+        end
 
       {:error, reason} ->
         system_error("Failed to get balance", reason)
@@ -88,7 +106,16 @@ defmodule Scalegraph.Ledger.Server do
         transaction_to_proto(tx)
 
       {:error, :not_found} ->
-        business_error(:not_found, "Account not found: #{request.account_id}")
+        case String.split(request.account_id, ":") do
+          [participant_id, account_type] ->
+            business_error(
+              :not_found,
+              "Account not found: #{request.account_id}. The #{account_type} account for participant '#{participant_id}' does not exist. Create it using CreateParticipantAccount with account_type=#{String.upcase(account_type)}."
+            )
+
+          _ ->
+            business_error(:not_found, "Account not found: #{request.account_id}")
+        end
 
       {:error, reason} ->
         system_error("Credit failed", reason)
@@ -104,7 +131,16 @@ defmodule Scalegraph.Ledger.Server do
         transaction_to_proto(tx)
 
       {:error, :not_found} ->
-        business_error(:not_found, "Account not found: #{request.account_id}")
+        case String.split(request.account_id, ":") do
+          [participant_id, account_type] ->
+            business_error(
+              :not_found,
+              "Account not found: #{request.account_id}. The #{account_type} account for participant '#{participant_id}' does not exist. Create it using CreateParticipantAccount with account_type=#{String.upcase(account_type)}."
+            )
+
+          _ ->
+            business_error(:not_found, "Account not found: #{request.account_id}")
+        end
 
       {:error, {:insufficient_funds, balance, amount}} ->
         business_error(
@@ -132,7 +168,16 @@ defmodule Scalegraph.Ledger.Server do
         transaction_to_proto(tx)
 
       {:error, {:not_found, account_id}} ->
-        business_error(:not_found, "Account not found: #{account_id}")
+        case String.split(account_id, ":") do
+          [participant_id, account_type] ->
+            business_error(
+              :not_found,
+              "Account not found: #{account_id}. The #{account_type} account for participant '#{participant_id}' does not exist. Create it using CreateParticipantAccount with account_type=#{String.upcase(account_type)}."
+            )
+
+          _ ->
+            business_error(:not_found, "Account not found: #{account_id}")
+        end
 
       {:error, {:insufficient_funds, account_id, balance, amount}} ->
         business_error(

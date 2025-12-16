@@ -35,8 +35,23 @@ defmodule Scalegraph.Business.Server do
           message: "Invoice created for #{format_amount(result.amount)}"
         }
 
-      {:error, {:not_found, message}} ->
-        business_error(:not_found, message)
+      {:error, {:not_found, account_id}} ->
+        case String.split(account_id, ":") do
+          [participant_id, account_type] ->
+            business_error(
+              :not_found,
+              "Account not found: #{account_id}. The #{account_type} account for participant '#{participant_id}' does not exist. Create it using CreateParticipantAccount with account_type=#{String.upcase(account_type)}."
+            )
+
+          _ ->
+            business_error(:not_found, "Account not found: #{account_id}")
+        end
+
+      {:error, {:insufficient_funds, account_id, balance, amount}} ->
+        business_error(
+          :failed_precondition,
+          "Account #{account_id} has balance #{format_amount(balance)}, cannot apply #{format_amount(amount)}"
+        )
 
       {:error, reason} ->
         business_error(:internal, "Invoice creation failed: #{inspect(reason)}")
@@ -63,11 +78,23 @@ defmodule Scalegraph.Business.Server do
           message: "Invoice paid: #{format_amount(result.amount)}"
         }
 
-      {:error, {:not_found, message}} ->
-        business_error(:not_found, message)
+      {:error, {:not_found, account_id}} ->
+        case String.split(account_id, ":") do
+          [participant_id, account_type] ->
+            business_error(
+              :not_found,
+              "Account not found: #{account_id}. The #{account_type} account for participant '#{participant_id}' does not exist. Create it using CreateParticipantAccount with account_type=#{String.upcase(account_type)}."
+            )
 
-      {:error, {:insufficient_funds, message}} ->
-        business_error(:failed_precondition, message)
+          _ ->
+            business_error(:not_found, "Account not found: #{account_id}")
+        end
+
+      {:error, {:insufficient_funds, account_id, balance, amount}} ->
+        business_error(
+          :failed_precondition,
+          "Account #{account_id} has balance #{format_amount(balance)}, cannot apply #{format_amount(amount)}"
+        )
 
       {:error, reason} ->
         business_error(:internal, "Invoice payment failed: #{inspect(reason)}")
@@ -98,14 +125,36 @@ defmodule Scalegraph.Business.Server do
           message: "Access granted"
         }
 
-      {:error, {:not_found, message}} ->
-        business_error(:not_found, message)
+      {:error, {:not_found, account_id}} ->
+        # Parse account_id to provide better context
+        case String.split(account_id, ":") do
+          [participant_id, account_type] ->
+            business_error(
+              :not_found,
+              "Account not found: #{account_id}. The #{account_type} account for participant '#{participant_id}' does not exist. Create it using CreateParticipantAccount with account_type=#{String.upcase(account_type)}."
+            )
 
-      {:error, {:insufficient_funds, message}} ->
-        business_error(:failed_precondition, message)
+          _ ->
+            business_error(:not_found, "Account not found: #{account_id}")
+        end
+
+      {:error, {:insufficient_funds, account_id, balance, amount}} ->
+        business_error(
+          :failed_precondition,
+          "Account #{account_id} has balance #{format_amount(balance)}, cannot apply #{format_amount(amount)}"
+        )
 
       {:error, {:account_not_found, account_id}} ->
-        business_error(:not_found, "Account not found: #{account_id}")
+        case String.split(account_id, ":") do
+          [participant_id, account_type] ->
+            business_error(
+              :not_found,
+              "Account not found: #{account_id}. The #{account_type} account for participant '#{participant_id}' does not exist. Create it using CreateParticipantAccount with account_type=#{String.upcase(account_type)}."
+            )
+
+          _ ->
+            business_error(:not_found, "Account not found: #{account_id}")
+        end
 
       {:error, reason} ->
         business_error(:internal, "Access payment failed: #{inspect(reason)}")
@@ -132,11 +181,23 @@ defmodule Scalegraph.Business.Server do
           message: "Loan created: #{format_amount(result.amount)}"
         }
 
-      {:error, {:not_found, message}} ->
-        business_error(:not_found, message)
+      {:error, {:not_found, account_id}} ->
+        case String.split(account_id, ":") do
+          [participant_id, account_type] ->
+            business_error(
+              :not_found,
+              "Account not found: #{account_id}. The #{account_type} account for participant '#{participant_id}' does not exist. Create it using CreateParticipantAccount with account_type=#{String.upcase(account_type)}."
+            )
 
-      {:error, {:insufficient_funds, message}} ->
-        business_error(:failed_precondition, message)
+          _ ->
+            business_error(:not_found, "Account not found: #{account_id}")
+        end
+
+      {:error, {:insufficient_funds, account_id, balance, amount}} ->
+        business_error(
+          :failed_precondition,
+          "Account #{account_id} has balance #{format_amount(balance)}, cannot apply #{format_amount(amount)}"
+        )
 
       {:error, reason} ->
         business_error(:internal, "Loan creation failed: #{inspect(reason)}")
@@ -163,11 +224,23 @@ defmodule Scalegraph.Business.Server do
           message: "Loan repaid: #{format_amount(result.amount)}"
         }
 
-      {:error, {:not_found, message}} ->
-        business_error(:not_found, message)
+      {:error, {:not_found, account_id}} ->
+        case String.split(account_id, ":") do
+          [participant_id, account_type] ->
+            business_error(
+              :not_found,
+              "Account not found: #{account_id}. The #{account_type} account for participant '#{participant_id}' does not exist. Create it using CreateParticipantAccount with account_type=#{String.upcase(account_type)}."
+            )
 
-      {:error, {:insufficient_funds, message}} ->
-        business_error(:failed_precondition, message)
+          _ ->
+            business_error(:not_found, "Account not found: #{account_id}")
+        end
+
+      {:error, {:insufficient_funds, account_id, balance, amount}} ->
+        business_error(
+          :failed_precondition,
+          "Account #{account_id} has balance #{format_amount(balance)}, cannot apply #{format_amount(amount)}"
+        )
 
       {:error, reason} ->
         business_error(:internal, "Loan repayment failed: #{inspect(reason)}")

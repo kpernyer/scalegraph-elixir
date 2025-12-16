@@ -14,7 +14,7 @@ use std::io;
 use std::panic;
 use std::time::Duration;
 use tokio::time::timeout;
-use ui::{App, run_app};
+use ui::{run_app, App};
 
 #[derive(Parser, Debug)]
 #[command(name = "scalegraph")]
@@ -61,7 +61,10 @@ async fn main() -> Result<()> {
         }
         Err(_) => {
             eprintln!("Connection timed out after 5 seconds.");
-            eprintln!("Make sure the Scalegraph Elixir server is running on {}", args.server);
+            eprintln!(
+                "Make sure the Scalegraph Elixir server is running on {}",
+                args.server
+            );
             std::process::exit(1);
         }
     };

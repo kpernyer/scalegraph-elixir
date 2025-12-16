@@ -16,7 +16,12 @@ pub enum View {
 
 impl View {
     pub fn all() -> Vec<View> {
-        vec![View::Participants, View::Accounts, View::Transfer, View::History]
+        vec![
+            View::Participants,
+            View::Accounts,
+            View::Transfer,
+            View::History,
+        ]
     }
 
     pub fn title(&self) -> &'static str {
@@ -173,9 +178,11 @@ impl App {
         if let Ok(transactions) = self.client.list_transactions(Some(50), None).await {
             for tx in transactions {
                 // Format each transaction as a string for display
-                let entries_str: Vec<String> = tx.entries.iter().map(|e| {
-                    format!("{}: {}", e.account_id, grpc::format_balance(e.amount))
-                }).collect();
+                let entries_str: Vec<String> = tx
+                    .entries
+                    .iter()
+                    .map(|e| format!("{}: {}", e.account_id, grpc::format_balance(e.amount)))
+                    .collect();
 
                 let msg = format!(
                     "[{}] {} | {} | {}",
@@ -214,7 +221,11 @@ impl App {
             (self.transfer_form.to_account.clone(), amount),
         ];
 
-        match self.client.transfer(entries, &self.transfer_form.reference).await {
+        match self
+            .client
+            .transfer(entries, &self.transfer_form.reference)
+            .await
+        {
             Ok(tx) => {
                 let msg = format!(
                     "Transfer {} from {} to {} (ref: {}, tx: {})",
@@ -241,13 +252,19 @@ impl App {
 
     pub fn next_view(&mut self) {
         let views = View::all();
-        let idx = views.iter().position(|v| *v == self.current_view).unwrap_or(0);
+        let idx = views
+            .iter()
+            .position(|v| *v == self.current_view)
+            .unwrap_or(0);
         self.current_view = views[(idx + 1) % views.len()];
     }
 
     pub fn prev_view(&mut self) {
         let views = View::all();
-        let idx = views.iter().position(|v| *v == self.current_view).unwrap_or(0);
+        let idx = views
+            .iter()
+            .position(|v| *v == self.current_view)
+            .unwrap_or(0);
         self.current_view = views[(idx + views.len() - 1) % views.len()];
     }
 
@@ -294,8 +311,7 @@ impl App {
                 }
             }
             View::Transfer => {
-                self.transfer_form.selected_field =
-                    (self.transfer_form.selected_field + 3) % 4;
+                self.transfer_form.selected_field = (self.transfer_form.selected_field + 3) % 4;
             }
             _ => {}
         }
@@ -345,9 +361,9 @@ impl App {
         self.accounts
             .iter()
             .filter(|acc| {
-                filter.is_empty() ||
-                acc.id.to_lowercase().contains(&filter_lower) ||
-                acc.account_type.to_lowercase().contains(&filter_lower)
+                filter.is_empty()
+                    || acc.id.to_lowercase().contains(&filter_lower)
+                    || acc.account_type.to_lowercase().contains(&filter_lower)
             })
             .collect()
     }
@@ -359,7 +375,8 @@ impl App {
         }
 
         // Get suggestion IDs first to avoid borrow issues
-        let suggestion_ids: Vec<String> = self.get_account_suggestions()
+        let suggestion_ids: Vec<String> = self
+            .get_account_suggestions()
             .iter()
             .map(|acc| acc.id.clone())
             .collect();
@@ -392,7 +409,8 @@ impl App {
         }
 
         // Get suggestion IDs first to avoid borrow issues
-        let suggestion_ids: Vec<String> = self.get_account_suggestions()
+        let suggestion_ids: Vec<String> = self
+            .get_account_suggestions()
             .iter()
             .map(|acc| acc.id.clone())
             .collect();
@@ -449,7 +467,9 @@ pub async fn run_app(
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
                     // Handle Ctrl+C
-                    if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+                    if key.modifiers.contains(KeyModifiers::CONTROL)
+                        && key.code == KeyCode::Char('c')
+                    {
                         app.running = false;
                         continue;
                     }
@@ -469,7 +489,9 @@ pub async fn run_app(
                         }
                         // Tab navigation - in Transfer form, Tab cycles through account suggestions
                         KeyCode::Tab => {
-                            if app.current_view == View::Transfer && app.transfer_form.selected_field <= 1 {
+                            if app.current_view == View::Transfer
+                                && app.transfer_form.selected_field <= 1
+                            {
                                 app.next_suggestion();
                             } else {
                                 let was_transfer = app.current_view == View::Transfer;
@@ -481,7 +503,9 @@ pub async fn run_app(
                             }
                         }
                         KeyCode::BackTab => {
-                            if app.current_view == View::Transfer && app.transfer_form.selected_field <= 1 {
+                            if app.current_view == View::Transfer
+                                && app.transfer_form.selected_field <= 1
+                            {
                                 app.prev_suggestion();
                             } else {
                                 let was_transfer = app.current_view == View::Transfer;
@@ -533,30 +557,26 @@ pub async fn run_app(
                             app.select_prev();
                         }
                         // Home/End for list navigation
-                        KeyCode::Home => {
-                            match app.current_view {
-                                View::Participants => app.participant_state.select(Some(0)),
-                                View::Accounts => app.account_state.select(Some(0)),
-                                _ => {}
-                            }
-                        }
-                        KeyCode::End => {
-                            match app.current_view {
-                                View::Participants => {
-                                    let len = app.participants.len();
-                                    if len > 0 {
-                                        app.participant_state.select(Some(len - 1));
-                                    }
+                        KeyCode::Home => match app.current_view {
+                            View::Participants => app.participant_state.select(Some(0)),
+                            View::Accounts => app.account_state.select(Some(0)),
+                            _ => {}
+                        },
+                        KeyCode::End => match app.current_view {
+                            View::Participants => {
+                                let len = app.participants.len();
+                                if len > 0 {
+                                    app.participant_state.select(Some(len - 1));
                                 }
-                                View::Accounts => {
-                                    let len = app.accounts.len();
-                                    if len > 0 {
-                                        app.account_state.select(Some(len - 1));
-                                    }
-                                }
-                                _ => {}
                             }
-                        }
+                            View::Accounts => {
+                                let len = app.accounts.len();
+                                if len > 0 {
+                                    app.account_state.select(Some(len - 1));
+                                }
+                            }
+                            _ => {}
+                        },
                         // Enter actions
                         KeyCode::Enter => {
                             if app.current_view == View::Transfer {
@@ -569,7 +589,8 @@ pub async fn run_app(
                                 }
                             } else if app.current_view == View::Participants {
                                 if let Some(idx) = app.participant_state.selected() {
-                                    let participant_id = app.participants.get(idx).map(|p| p.id.clone());
+                                    let participant_id =
+                                        app.participants.get(idx).map(|p| p.id.clone());
                                     if let Some(pid) = participant_id {
                                         app.selected_participant = Some(pid.clone());
                                         let _ = app.load_accounts(Some(&pid)).await;

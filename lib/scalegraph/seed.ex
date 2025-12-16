@@ -75,19 +75,22 @@ defmodule Scalegraph.Seed do
   end
 
   defp seed_participants(participants) do
-    results = Enum.map(participants, fn p ->
-      case create_participant_with_accounts(p) do
-        {:ok, participant, accounts} ->
-          {:ok, participant.name, length(accounts)}
-        {:error, reason} ->
-          {:error, p["name"] || p["id"], reason}
-      end
-    end)
+    results =
+      Enum.map(participants, fn p ->
+        case create_participant_with_accounts(p) do
+          {:ok, participant, accounts} ->
+            {:ok, participant.name, length(accounts)}
 
-    {successes, failures} = Enum.split_with(results, fn
-      {:ok, _, _} -> true
-      _ -> false
-    end)
+          {:error, reason} ->
+            {:error, p["name"] || p["id"], reason}
+        end
+      end)
+
+    {successes, failures} =
+      Enum.split_with(results, fn
+        {:ok, _, _} -> true
+        _ -> false
+      end)
 
     Logger.info("Seeding complete: #{length(successes)} created, #{length(failures)} failed")
 
@@ -112,18 +115,25 @@ defmodule Scalegraph.Seed do
   end
 
   defp create_accounts(participant_id, accounts) do
-    results = Enum.map(accounts, fn acc ->
-      account_type = parse_account_type(acc["type"])
-      initial_balance = acc["initial_balance"] || 0
-      metadata = acc["metadata"] || %{}
+    results =
+      Enum.map(accounts, fn acc ->
+        account_type = parse_account_type(acc["type"])
+        initial_balance = acc["initial_balance"] || 0
+        metadata = acc["metadata"] || %{}
 
-      Participant.create_participant_account(participant_id, account_type, initial_balance, metadata)
-    end)
+        Participant.create_participant_account(
+          participant_id,
+          account_type,
+          initial_balance,
+          metadata
+        )
+      end)
 
-    errors = Enum.filter(results, fn
-      {:error, _} -> true
-      _ -> false
-    end)
+    errors =
+      Enum.filter(results, fn
+        {:error, _} -> true
+        _ -> false
+      end)
 
     if Enum.empty?(errors) do
       {:ok, Enum.map(results, fn {:ok, acc} -> acc end)}
@@ -137,6 +147,7 @@ defmodule Scalegraph.Seed do
   rescue
     ArgumentError -> :ecosystem_partner
   end
+
   defp parse_role(_), do: :ecosystem_partner
 
   defp parse_account_type(type) when is_binary(type) do
@@ -144,5 +155,6 @@ defmodule Scalegraph.Seed do
   rescue
     ArgumentError -> :operating
   end
+
   defp parse_account_type(_), do: :operating
 end
