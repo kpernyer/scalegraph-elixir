@@ -64,7 +64,7 @@ fn draw_tabs(f: &mut Frame, app: &App, area: Rect) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(" Scalegraph Ledger  [←/→ or 1-5 to switch tabs] "),
+                .title(" Scalegraph Ledger  [←/→ or 1-4 to switch tabs] "),
         )
         .highlight_style(Style::default().fg(Color::Yellow))
         .select(
@@ -257,7 +257,7 @@ fn draw_participant_detail(f: &mut Frame, app: &App, area: Rect) {
     // Split into left (About/Contact) and right (Accounts summary) columns
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(area);
 
     // Left side: About and Contact sections
@@ -454,10 +454,17 @@ fn draw_participant_detail(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(contact, left_chunks[1]);
 
     // Right side: Accounts and Contracts
+    // Calculate dynamic height for accounts section: header (4 lines) + account list
+    let accounts_header_height = 4; // Total Balance, Account Count, blank, "Accounts:" header
+    let calculated_height = accounts_header_height + detail.accounts.len() + 1; // +1 for border
+    // Cap at 80% of available height to leave room for contracts
+    let max_height = (area.height as usize * 4 / 5).max(8); // At least 8 lines
+    let accounts_display_height = calculated_height.min(max_height) as u16;
+    
     let right_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(8), // Accounts summary
+            Constraint::Length(accounts_display_height), // Accounts summary (dynamic)
             Constraint::Min(0),   // Contracts
         ])
         .split(chunks[1]);
@@ -489,10 +496,10 @@ fn draw_participant_detail(f: &mut Frame, app: &App, area: Rect) {
         )),
     ];
 
-    let mut account_list_lines: Vec<Line> = detail
+    // Show all accounts (no limit)
+    let account_list_lines: Vec<Line> = detail
         .accounts
         .iter()
-        .take(5) // Show first 5 accounts
         .map(|acc| {
             Line::from(vec![
                 Span::styled("  • ", Style::default().fg(Color::DarkGray)),
@@ -509,13 +516,6 @@ fn draw_participant_detail(f: &mut Frame, app: &App, area: Rect) {
             ])
         })
         .collect();
-
-    if detail.accounts.len() > 5 {
-        account_list_lines.push(Line::from(Span::styled(
-            format!("  ... and {} more", detail.accounts.len() - 5),
-            Style::default().fg(Color::DarkGray),
-        )));
-    }
 
     let mut all_account_lines = account_summary_lines;
     all_account_lines.extend(account_list_lines);
