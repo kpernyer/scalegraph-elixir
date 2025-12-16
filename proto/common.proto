@@ -1,0 +1,103 @@
+syntax = "proto3";
+
+package scalegraph.common;
+
+// Elixir-specific option (ignored by Rust/tonic)
+option elixir_module_prefix = "Scalegraph.Proto";
+
+// ============================================================================
+// Participant Types
+// ============================================================================
+
+enum ParticipantRole {
+  PARTICIPANT_ROLE_UNSPECIFIED = 0;
+  ACCESS_PROVIDER = 1;            // i.e., ASSA ABLOY 
+  BANKING_PARTNER = 2;            // i.e., SEB
+  ECOSYSTEM_PARTNER = 3;          // e.g., Studio Solveig, Hair and Beard
+  SUPPLIER = 4;                   // e.g., Schampo etc, Clipper Oy, Essity
+  EQUIPMENT_PROVIDER = 5;         // e.g., Hairgrowers United (pay-per-use)
+  ECOSYSTEM_ORCHESTRATOR = 6;     // e.g., Beauty Hosting
+}
+
+message Contact {
+  string email = 1;        // Primary email address
+  string phone = 2;        // Primary phone number
+  string website = 3;      // Website URL
+  string address = 4;      // Physical address (street, city, etc.)
+  string postal_code = 5;  // Postal/ZIP code
+  string city = 6;         // City
+  string country = 7;      // Country code (e.g., "SE", "US")
+}
+
+message Participant {
+  string id = 1;
+  string name = 2;
+  ParticipantRole role = 3;
+  int64 created_at = 4;
+  map<string, string> metadata = 5;
+  repeated string services = 6;  // Service identifiers this participant provides
+  string about = 7;               // About/description of the participant
+  Contact contact = 8;           // Structured contact information
+}
+
+// ============================================================================
+// Account Types
+// ============================================================================
+
+// Account types and their usage:
+// - operating: Likvida medel, dagligt kassaflöde (All participants)
+// - escrow: Fryst kapital (säkerhet, depå) (Bankers)
+// - receivables: Fordringar (framtida inbetalningar) (Suppliers, Bankers)
+// - payables: Skulder (framtida utbetalningar) (Salons, Suppliers)
+// - fees: Ackumulerad avgift/provision att samla in (Access Providers, Platforms)
+// - usage: Ackumulerad användningsavgift (Equipment Providers)
+enum AccountType {
+  ACCOUNT_TYPE_UNSPECIFIED = 0;
+  STANDALONE = 1;          // Standalone accounts (not linked to participants)
+  OPERATING = 2;           // Likvida medel, dagligt kassaflöde
+  RECEIVABLES = 3;         // Fordringar (framtida inbetalningar)
+  PAYABLES = 4;            // Skulder (framtida utbetalningar)
+  ESCROW = 5;              // Fryst kapital (säkerhet, depå)
+  FEES = 6;                // Ackumulerad avgift/provision att samla in
+  USAGE = 7;               // Ackumulerad användningsavgift
+}
+
+message Account {
+  string id = 1;
+  string participant_id = 2;
+  AccountType account_type = 3;
+  int64 balance = 4;
+  int64 created_at = 5;
+  map<string, string> metadata = 6;
+}
+
+// ============================================================================
+// Transaction Types
+// ============================================================================
+
+// TransferEntry represents a single entry in a multi-party transaction
+message TransferEntry {
+  string account_id = 1;
+  int64 amount = 2;  // positive = credit, negative = debit
+}
+
+// Transaction represents a completed ledger transaction
+// All transactions are generic transfers with debit/credit entries that sum to zero.
+// Business semantics (invoice, loan, etc.) are stored in the Business/Contract layer.
+message Transaction {
+  string id = 1;
+  string type = 2;  // Optional, informational only: "transfer" (default). Business semantics in reference/contract layer.
+  repeated TransferEntry entries = 3;
+  int64 timestamp = 4;
+  string reference = 5;  // Human-readable reference, may contain business context (e.g., "INVOICE: INV-001")
+}
+
+// ============================================================================
+// Common Responses
+// ============================================================================
+
+message ErrorResponse {
+  string code = 1;
+  string message = 2;
+}
+

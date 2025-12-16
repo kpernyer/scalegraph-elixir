@@ -6,15 +6,24 @@ A distributed ledger system for multi-party ecosystems, built with Elixir/OTP, M
 
 Scalegraph provides atomic multi-party transactions and account management for ecosystem participants. It's designed for scenarios where multiple organizations need to coordinate financial flows with strong consistency guarantees.
 
+The system follows a **separation of concerns** architecture:
+- **Ledger Layer**: Immutable double-entry bookkeeping with generic transfers
+- **Business/Contract Layer**: Business logic, contracts, and workflows (invoices, loans, revenue-share, etc.)
+
+This design ensures the ledger remains simple and replayable while supporting complex business scenarios. See [`docs/LEDGER_DESIGN.md`](docs/LEDGER_DESIGN.md) for detailed architecture documentation.
+
 ## Features
 
 - **Atomic Transactions**: Multi-party transfers with ACID guarantees via Mnesia
+- **Separation of Concerns**: Clean separation between ledger (double-entry bookkeeping) and business logic layers
+- **Generic Transfers**: Flexible transaction model that can represent any business scenario
 - **Participant Management**: Organizations with defined roles in the ecosystem
 - **Participant Services**: Declare and discover capabilities (e.g., "financing", "access_control")
 - **Account Types**: Operating, receivables, payables, escrow, fees, and usage accounts
 - **Three-Party Settlements**: Embedded financing and complex multi-party atomic transfers
 - **gRPC API**: High-performance API for integration
 - **Rust TUI CLI**: Terminal interface for interacting with the ledger
+- **Replayable History**: All transactions are self-describing and can reconstruct entire state
 
 ## Requirements
 
@@ -159,18 +168,32 @@ Participant.create_participant_account("my_org", :operating, 0)
 
 ### Transfer Funds
 
+The ledger uses **generic transfers** that can represent any business scenario:
+
 ```elixir
 alias Scalegraph.Ledger.Core, as: Ledger
 
-# Credit an account
+# Credit an account (single-entry, creates offset entry automatically)
 Ledger.credit("my_org:operating", 1000, "initial_deposit")
 
-# Atomic multi-party transfer
+# Atomic multi-party transfer (entries must sum to zero)
 Ledger.transfer([
   {"sender:operating", -500},
   {"receiver:operating", 500}
 ], "payment_ref")
+
+# Multi-party transfer with fees (entries can be unbalanced)
+Ledger.transfer([
+  {"payer:operating", -1000},
+  {"payee:operating", 950},
+  {"platform:fees", 50}
+], "payment_with_fee")
 ```
+
+**Key Points:**
+- All transfers are **generic** - the ledger doesn't know if it's a payment, invoice, or loan
+- Entries can sum to zero (balanced) or be unbalanced (allows fees, taxes, etc.)
+- Business semantics are handled in the Business/Contract Layer
 
 ### Declare Participant Services
 
@@ -273,21 +296,96 @@ config :mnesia, dir: ~c"./priv/mnesia_data"
 mix test
 ```
 
+## Architecture
+
+Scalegraph follows a layered architecture with clear separation of concerns:
+
+### Ledger Layer
+The immutable ledger handles only double-entry bookkeeping:
+- Generic transfers with entries that sum to zero
+- Account balances
+- Transaction audit trail
+- **No business semantics** - the ledger doesn't know what transactions represent
+
+### Business/Contract Layer
+Business logic and contracts are handled separately:
+- Invoices, loans, revenue-share contracts
+- Conditional payments and subscriptions
+- State machines and workflows
+- References ledger transactions but stores metadata separately
+
+This design provides:
+- **Flexibility**: New business constructs require no changes to the ledger
+- **Replayability**: All transactions are self-describing
+- **Scalability**: Can build smart contracts on top of the business layer
+
+For detailed architecture documentation, see [`docs/LEDGER_DESIGN.md`](docs/LEDGER_DESIGN.md).
+
 ## Project Structure
 
 ```
 scalegraph-elexir/
+├── proto/                   # Protobuf definitions (single source of truth)
+│   └── ledger.proto         # gRPC service definitions
 ├── lib/
 │   └── scalegraph/
-│       ├── ledger/          # Account and transaction logic
+│       ├── ledger/          # Ledger layer (double-entry bookkeeping)
+│       ├── business/        # Business/Contract layer
 │       ├── participant/     # Organization management
 │       ├── storage/         # Mnesia schema and setup
 │       └── proto/           # Generated protobuf modules
 ├── cli/                     # Rust TUI client
+├── mcp/                     # Model Context Protocol server
 ├── config/                  # Configuration files
+├── docs/                    # Documentation
+│   ├── LEDGER_DESIGN.md     # Architecture and design decisions
+│   ├── GIT_WORKFLOW.md      # Git workflow guide
+│   └── ...                  # Other documentation
 ├── priv/                    # Static assets
 └── test/                    # Test files
 ```
+
+## Documentation
+
+- **[`docs/LEDGER_DESIGN.md`](docs/LEDGER_DESIGN.md)**: Architecture design, separation of concerns, and implementation plan
+- **[`docs/GIT_WORKFLOW.md`](docs/GIT_WORKFLOW.md)**: Git workflow guide for contributors
+- **[`ARCHITECTURE.md`](ARCHITECTURE.md)**: System architecture and design decisions
+- **[`CONVENTIONS.md`](CONVENTIONS.md)**: Coding conventions and best practices
+- **[`PROJECT.md`](PROJECT.md)**: Detailed component breakdown and data flow
+
+## Contributing
+
+### Git Workflow
+
+For larger changes, use feature branches:
+
+```bash
+# Create feature branch
+git checkout -b feature/your-feature-name
+
+# Work and commit regularly
+git add .
+git commit -m "feat: description of changes"
+
+# When ready, merge to main
+git checkout main
+git merge feature/your-feature-name
+```
+
+**Before merging:**
+- Run all tests: `just test`
+- Check formatting: `just fmt`
+- Run linter: `just lint`
+- Verify everything works
+
+See [`docs/GIT_WORKFLOW.md`](docs/GIT_WORKFLOW.md) for detailed workflow guidelines.
+
+### Code Quality
+
+- Follow conventions in [`CONVENTIONS.md`](CONVENTIONS.md)
+- All code must be formatted: `mix format`
+- No Credo warnings: `mix credo --strict`
+- All tests must pass: `mix test`
 
 ## License
 

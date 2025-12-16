@@ -45,7 +45,7 @@ defmodule Scalegraph.Ledger.CoreTest do
     test "adds funds to account" do
       {:ok, _} = Core.create_account("acc1", 100)
       assert {:ok, tx} = Core.credit("acc1", 50, "deposit")
-      assert tx.type == "credit"
+      assert tx.type == "transfer"  # All transactions are generic transfers
 
       {:ok, account} = Core.get_account("acc1")
       assert account.balance == 150
@@ -56,7 +56,7 @@ defmodule Scalegraph.Ledger.CoreTest do
     test "subtracts funds from account" do
       {:ok, _} = Core.create_account("acc1", 100)
       assert {:ok, tx} = Core.debit("acc1", 30, "withdrawal")
-      assert tx.type == "debit"
+      assert tx.type == "transfer"  # All transactions are generic transfers
 
       {:ok, account} = Core.get_account("acc1")
       assert account.balance == 70
@@ -64,7 +64,7 @@ defmodule Scalegraph.Ledger.CoreTest do
 
     test "fails with insufficient funds" do
       {:ok, _} = Core.create_account("acc1", 50)
-      assert {:error, {:insufficient_funds, _}} = Core.debit("acc1", 100, "overdraft")
+      assert {:error, {:insufficient_funds, _, _}} = Core.debit("acc1", 100, "overdraft")
 
       # Balance unchanged
       {:ok, account} = Core.get_account("acc1")
@@ -128,7 +128,7 @@ defmodule Scalegraph.Ledger.CoreTest do
         {"bob", 500}
       ]
 
-      assert {:error, {:insufficient_funds, _}} = Core.transfer(entries, "failed")
+      assert {:error, {:insufficient_funds, _, _, _}} = Core.transfer(entries, "failed")
 
       # Both balances unchanged
       {:ok, alice} = Core.get_account("alice")

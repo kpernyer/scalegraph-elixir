@@ -28,14 +28,16 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3), // Tabs
+            Constraint::Length(1), // Breadcrumb
             Constraint::Min(0),    // Main content
             Constraint::Length(3), // Status bar
         ])
         .split(f.area());
 
     draw_tabs(f, app, chunks[0]);
-    draw_main(f, app, chunks[1]);
-    draw_status_bar(f, app, chunks[2]);
+    draw_breadcrumb(f, app, chunks[1]);
+    draw_main(f, app, chunks[2]);
+    draw_status_bar(f, app, chunks[3]);
 }
 
 fn draw_tabs(f: &mut Frame, app: &App, area: Rect) {
@@ -75,9 +77,45 @@ fn draw_tabs(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(tabs, area);
 }
 
+fn draw_breadcrumb(f: &mut Frame, app: &App, area: Rect) {
+    if app.breadcrumb.is_empty() {
+        return;
+    }
+
+    let mut spans = Vec::new();
+
+    for (i, segment) in app.breadcrumb.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::styled(" > ", Style::default().fg(Color::DarkGray)));
+        }
+
+        let style = if i == app.breadcrumb.len() - 1 {
+            // Current segment - highlighted
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            // Previous segments - navigable
+            Style::default().fg(Color::Cyan)
+        };
+
+        spans.push(Span::styled(segment.label.clone(), style));
+    }
+
+    let line = Line::from(spans);
+    let paragraph = Paragraph::new(line).block(
+        Block::default()
+            .borders(Borders::BOTTOM)
+            .border_style(Style::default().fg(Color::DarkGray)),
+    );
+
+    f.render_widget(paragraph, area);
+}
+
 fn draw_main(f: &mut Frame, app: &mut App, area: Rect) {
     match app.current_view {
         View::Participants => draw_participants(f, app, area),
+        View::ParticipantDetail => draw_participant_detail(f, app, area),
         View::Accounts => draw_accounts(f, app, area),
         View::Transfer => draw_transfer(f, app, area),
         View::History => draw_history(f, app, area),
@@ -88,61 +126,399 @@ fn draw_participants(f: &mut Frame, app: &mut App, area: Rect) {
     let selected_idx = app.participant_state.selected().unwrap_or(0);
     let total = app.participants.len();
 
-    let items: Vec<ListItem> = app
+    let title = format!(" Participants ({}/{}) ", selected_idx + 1, total);
+
+    let header = Row::new(vec![
+        Cell::from("Name").style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Cell::from("Role").style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Cell::from("ID").style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Cell::from("Services").style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ])
+    .height(1)
+    .bottom_margin(1);
+
+    let rows: Vec<Row> = app
         .participants
         .iter()
-        .map(|p| {
-            // Format services: show first 3, or count if more
-            let services_display = if p.services.is_empty() {
-                String::from("no services")
-            } else if p.services.len() <= 3 {
-                p.services.join(", ")
+        .enumerate()
+        .map(|(i, p)| {
+            let selected = app.participant_state.selected() == Some(i);
+            let row_style = if selected {
+                Style::default().bg(Color::Blue).fg(Color::White)
             } else {
-                format!(
-                    "{} (+{} more)",
-                    p.services[..3].join(", "),
-                    p.services.len() - 3
-                )
+                Style::default()
             };
 
-            let content = Line::from(vec![
-                Span::styled(
-                    format!("{:<20}", p.name),
-                    Style::default()
-                        .fg(Color::White)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::raw(" "),
-                Span::styled(format!("[{}]", p.role), Style::default().fg(Color::Cyan)),
-                Span::raw(" "),
-                Span::styled(format!("({})", p.id), Style::default().fg(Color::DarkGray)),
-                Span::raw(" "),
-                Span::styled(
-                    format!("→ {}", services_display),
-                    Style::default().fg(Color::Green),
-                ),
-            ]);
-            ListItem::new(content)
+            // Format services: show first 2, or count if more
+            let services_display = if p.services.is_empty() {
+                String::from("—")
+            } else if p.services.len() <= 2 {
+                p.services.join(", ")
+            } else {
+                format!("{} (+{} more)", p.services[..2].join(", "), p.services.len() - 2)
+            };
+
+            // Truncate long names/IDs for better column alignment
+            let name_display = if p.name.len() > 25 {
+                format!("{}...", &p.name[..22])
+            } else {
+                p.name.clone()
+            };
+
+            let id_display = if p.id.len() > 20 {
+                format!("{}...", &p.id[..17])
+            } else {
+                p.id.clone()
+            };
+
+            let prefix = if selected { "▶ " } else { "  " };
+            
+            Row::new(vec![
+                Cell::from(format!("{}{}", prefix, name_display))
+                    .style(if selected {
+                        Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
+                    }),
+                Cell::from(p.role.clone())
+                    .style(if selected {
+                        Style::default().fg(Color::White)
+                    } else {
+                        Style::default().fg(Color::Cyan)
+                    }),
+                Cell::from(id_display)
+                    .style(if selected {
+                        Style::default().fg(Color::White)
+                    } else {
+                        Style::default().fg(Color::DarkGray)
+                    }),
+                Cell::from(services_display)
+                    .style(if selected {
+                        Style::default().fg(Color::White)
+                    } else {
+                        Style::default().fg(Color::Green)
+                    }),
+            ])
+            .style(row_style)
         })
         .collect();
 
-    let title = format!(" Participants ({}/{}) ", selected_idx + 1, total);
-    let list = List::new(items)
+    let widths = [
+        Constraint::Percentage(30), // Name
+        Constraint::Percentage(20), // Role
+        Constraint::Percentage(25), // ID
+        Constraint::Percentage(25), // Services
+    ];
+
+    let table = Table::new(rows, widths)
+        .header(header)
         .block(
             Block::default()
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Yellow))
                 .title(title),
-        )
-        .highlight_style(
-            Style::default()
-                .bg(Color::Blue)
-                .fg(Color::White)
-                .add_modifier(Modifier::BOLD),
-        )
-        .highlight_symbol("▶ ");
+        );
 
-    f.render_stateful_widget(list, area, &mut app.participant_state);
+    f.render_widget(table, area);
+    
+    // Handle selection navigation manually since Table doesn't support stateful rendering
+    // The selection highlighting is already applied in the row styles above
+}
+
+fn draw_participant_detail(f: &mut Frame, app: &App, area: Rect) {
+    let detail = match &app.participant_detail {
+        Some(d) => d,
+        None => {
+            let msg = Paragraph::new(Line::from(Span::styled(
+                "No participant selected",
+                Style::default().fg(Color::DarkGray),
+            )));
+            f.render_widget(msg, area);
+            return;
+        }
+    };
+
+    // Split into left (About/Contact) and right (Accounts summary) columns
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+        .split(area);
+
+    // Left side: About and Contact sections
+    let left_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(8), // About section
+            Constraint::Min(0),   // Contact section
+        ])
+        .split(chunks[0]);
+
+    // About Section
+    let created_at_str = if let Some(timestamp) = detail.info.created_at {
+        // Convert milliseconds since epoch to readable date
+        if let Some(datetime) = chrono::DateTime::from_timestamp_millis(timestamp) {
+            datetime.format("%Y-%m-%d %H:%M:%S").to_string()
+        } else {
+            format!("{}", timestamp)
+        }
+    } else {
+        "Unknown".to_string()
+    };
+    
+    let mut about_lines = vec![
+        Line::from(vec![
+            Span::styled("Name: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(&detail.info.name, Style::default().fg(Color::White)),
+        ]),
+        Line::from(vec![
+            Span::styled("ID: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(&detail.info.id, Style::default().fg(Color::DarkGray)),
+        ]),
+        Line::from(vec![
+            Span::styled("Role: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(&detail.info.role, Style::default().fg(Color::Cyan)),
+        ]),
+        Line::from(vec![
+            Span::styled("Created: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(&created_at_str, Style::default().fg(Color::DarkGray)),
+        ]),
+        Line::from(vec![
+            Span::styled("Services: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                if detail.info.services.is_empty() {
+                    "None".to_string()
+                } else {
+                    detail.info.services.join(", ")
+                },
+                Style::default().fg(Color::Green),
+            ),
+        ]),
+    ];
+    
+    // Add About text if available
+    if !detail.info.about.is_empty() {
+        about_lines.push(Line::raw(""));
+        about_lines.push(Line::from(Span::styled(
+            "About:",
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+        )));
+        // Split about text into multiple lines (simple word wrap at 40 chars)
+        let about_text = &detail.info.about;
+        let words: Vec<&str> = about_text.split_whitespace().collect();
+        let mut current_line = String::new();
+        for word in words {
+            if current_line.len() + word.len() + 1 > 40 && !current_line.is_empty() {
+                about_lines.push(Line::from(Span::styled(
+                    current_line.clone(),
+                    Style::default().fg(Color::White),
+                )));
+                current_line = word.to_string();
+            } else {
+                if !current_line.is_empty() {
+                    current_line.push(' ');
+                }
+                current_line.push_str(word);
+            }
+        }
+        if !current_line.is_empty() {
+            about_lines.push(Line::from(Span::styled(
+                current_line,
+                Style::default().fg(Color::White),
+            )));
+        }
+    }
+
+    let about = Paragraph::new(about_lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Yellow))
+                .title(" About "),
+        );
+    f.render_widget(about, left_chunks[0]);
+
+    // Contact Section - use structured contact info
+    let mut contact_lines = Vec::new();
+    let contact = &detail.info.contact;
+    
+    // Display contact fields that have values
+    if !contact.email.is_empty() {
+        contact_lines.push(Line::from(vec![
+            Span::styled("Email: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(&contact.email, Style::default().fg(Color::White)),
+        ]));
+    }
+    
+    if !contact.phone.is_empty() {
+        contact_lines.push(Line::from(vec![
+            Span::styled("Phone: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(&contact.phone, Style::default().fg(Color::White)),
+        ]));
+    }
+    
+    if !contact.website.is_empty() {
+        contact_lines.push(Line::from(vec![
+            Span::styled("Website: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(&contact.website, Style::default().fg(Color::White)),
+        ]));
+    }
+    
+    if !contact.address.is_empty() {
+        contact_lines.push(Line::from(vec![
+            Span::styled("Address: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(&contact.address, Style::default().fg(Color::White)),
+        ]));
+    }
+    
+    // Combine city, postal_code, country into one line if available
+    let mut location_parts = Vec::new();
+    if !contact.city.is_empty() {
+        location_parts.push(contact.city.clone());
+    }
+    if !contact.postal_code.is_empty() {
+        location_parts.push(contact.postal_code.clone());
+    }
+    if !contact.country.is_empty() {
+        location_parts.push(contact.country.clone());
+    }
+    
+    if !location_parts.is_empty() {
+        contact_lines.push(Line::from(vec![
+            Span::styled("Location: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(location_parts.join(", "), Style::default().fg(Color::White)),
+        ]));
+    }
+    
+    // Fall back to metadata if no structured contact info
+    if contact_lines.is_empty() {
+        let contact_keys = ["email", "phone", "website", "address"];
+        for key in &contact_keys {
+            if let Some(value) = detail.info.metadata.get(*key) {
+                let label = key.chars().next().unwrap().to_uppercase().collect::<String>()
+                    + &key[1..].replace("_", " ");
+                contact_lines.push(Line::from(vec![
+                    Span::styled(
+                        format!("{}: ", label),
+                        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(value, Style::default().fg(Color::White)),
+                ]));
+            }
+        }
+    }
+
+    // Add any other metadata entries that aren't standard contact fields
+    let contact_keys = ["email", "phone", "website", "address", "contact"];
+    for (key, value) in &detail.info.metadata {
+        if !contact_keys.contains(&key.as_str()) {
+            contact_lines.push(Line::from(vec![
+                Span::styled(
+                    format!("{}: ", key),
+                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(value, Style::default().fg(Color::White)),
+            ]));
+        }
+    }
+
+    if contact_lines.is_empty() {
+        contact_lines.push(Line::from(Span::styled(
+            "No contact information available",
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+
+    let contact = Paragraph::new(contact_lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan))
+                .title(" Contact "),
+        );
+    f.render_widget(contact, left_chunks[1]);
+
+    // Right side: Accounts Summary
+    let account_summary_lines = vec![
+        Line::from(vec![
+            Span::styled("Total Balance: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                grpc::format_balance(detail.total_balance),
+                Style::default().fg(if detail.total_balance >= 0 {
+                    Color::Green
+                } else {
+                    Color::Red
+                }),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("Account Count: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                detail.accounts.len().to_string(),
+                Style::default().fg(Color::White),
+            ),
+        ]),
+        Line::raw(""),
+        Line::from(Span::styled(
+            "Accounts:",
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+        )),
+    ];
+
+    let mut account_list_lines: Vec<Line> = detail
+        .accounts
+        .iter()
+        .take(10) // Show first 10 accounts
+        .map(|acc| {
+            Line::from(vec![
+                Span::styled("  • ", Style::default().fg(Color::DarkGray)),
+                Span::styled(&acc.account_type, Style::default().fg(Color::Cyan)),
+                Span::raw(": "),
+                Span::styled(
+                    grpc::format_balance(acc.balance),
+                    Style::default().fg(if acc.balance >= 0 {
+                        Color::Green
+                    } else {
+                        Color::Red
+                    }),
+                ),
+            ])
+        })
+        .collect();
+
+    if detail.accounts.len() > 10 {
+        account_list_lines.push(Line::from(Span::styled(
+            format!("  ... and {} more", detail.accounts.len() - 10),
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+
+    let mut all_lines = account_summary_lines;
+    all_lines.extend(account_list_lines);
+
+    let accounts_summary = Paragraph::new(all_lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Green))
+                .title(" Accounts Summary "),
+        );
+    f.render_widget(accounts_summary, chunks[1]);
 }
 
 fn draw_accounts(f: &mut Frame, app: &mut App, area: Rect) {
@@ -466,11 +842,14 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
     } else {
         match app.current_view {
             View::Participants => {
-                " ↑/↓:Select  Enter:View Accounts  r:Refresh  q:Quit ".to_string()
+                " ↑/↓:Select  Enter:View Details  r:Refresh  q:Quit ".to_string()
+            }
+            View::ParticipantDetail => {
+                " Enter:View Accounts  b:Back  q:Quit ".to_string()
             }
             View::Accounts => {
                 let back = if app.selected_participant.is_some() {
-                    "a:Show All  "
+                    "b:Back  a:Show All  "
                 } else {
                     ""
                 };
@@ -501,12 +880,41 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
     let help = Paragraph::new(Line::from(Span::styled(help_text, help_style)))
         .block(Block::default().borders(Borders::ALL).title(" Keys "));
 
-    // Right: global info
-    let info = format!(
-        " {} participants | {} accounts ",
-        app.participants.len(),
-        app.accounts.len()
-    );
+    // Right: context-aware info
+    let info = match app.current_view {
+        View::Participants => {
+            format!(" {} participants ", app.participants.len())
+        }
+        View::ParticipantDetail => {
+            if let Some(ref detail) = app.participant_detail {
+                format!(" {} accounts | {} total balance ", detail.accounts.len(), grpc::format_balance(detail.total_balance))
+            } else {
+                " Loading... ".to_string()
+            }
+        }
+        View::Accounts => {
+            if let Some(ref pid) = app.selected_participant {
+                // Find participant name
+                let participant_name = app
+                    .participants
+                    .iter()
+                    .find(|p| p.id == *pid)
+                    .map(|p| p.name.clone())
+                    .unwrap_or_else(|| pid.clone());
+                format!(" {} accounts ({}) ", app.accounts.len(), participant_name)
+            } else {
+                format!(" {} accounts (all) ", app.accounts.len())
+            }
+        }
+        View::Transfer => {
+            // Show available accounts for transfer
+            format!(" {} accounts available ", app.accounts.len())
+        }
+        View::History => {
+            format!(" {} transactions ", app.history.len())
+        }
+    };
+    
     let info_widget = Paragraph::new(Line::from(Span::styled(
         info,
         Style::default().fg(Color::DarkGray),

@@ -8,12 +8,13 @@ defmodule Scalegraph.Participant.Server do
   System errors are raised as exceptions and logged at error level.
   """
 
-  use GRPC.Server, service: Scalegraph.Proto.ParticipantService.Service
+  use GRPC.Server, service: Scalegraph.Business.ParticipantService.Service
 
   require Logger
 
   alias Scalegraph.Participant.Core
-  alias Scalegraph.Proto
+  alias Scalegraph.Common
+  alias Scalegraph.Business
 
   # Role mapping from proto enum to internal atoms
   @role_mapping %{
@@ -21,7 +22,8 @@ defmodule Scalegraph.Participant.Server do
     :BANKING_PARTNER => :banking_partner,
     :ECOSYSTEM_PARTNER => :ecosystem_partner,
     :SUPPLIER => :supplier,
-    :EQUIPMENT_PROVIDER => :equipment_provider
+    :EQUIPMENT_PROVIDER => :equipment_provider,
+    :ECOSYSTEM_ORCHESTRATOR => :ecosystem_orchestrator
   }
 
   @reverse_role_mapping Map.new(@role_mapping, fn {k, v} -> {v, k} end)
@@ -45,8 +47,24 @@ defmodule Scalegraph.Participant.Server do
   def create_participant(request, _stream) do
     role = Map.get(@role_mapping, request.role, :ecosystem_partner)
     metadata = Map.new(request.metadata || [])
+    about = request.about || ""
+    
+    # Convert Contact proto to map
+    contact = if request.contact do
+      %{
+        email: request.contact.email || "",
+        phone: request.contact.phone || "",
+        website: request.contact.website || "",
+        address: request.contact.address || "",
+        postal_code: request.contact.postal_code || "",
+        city: request.contact.city || "",
+        country: request.contact.country || ""
+      }
+    else
+      %{}
+    end
 
-    case Core.create_participant(request.id, request.name, role, metadata) do
+    case Core.create_participant(request.id, request.name, role, metadata, about, contact) do
       {:ok, participant} ->
         Logger.info("Participant created: #{participant.id}")
         participant_to_proto(participant)
@@ -59,6 +77,7 @@ defmodule Scalegraph.Participant.Server do
 
       {:error, {:schema_mismatch, message}} ->
         Logger.error("Schema mismatch error: #{message}")
+
         business_error(
           :failed_precondition,
           "Database schema mismatch. The participants table may have been created with an older schema. Try recreating the table or clearing the database."
@@ -98,7 +117,7 @@ defmodule Scalegraph.Participant.Server do
 
     case Core.list_participants(role_filter) do
       {:ok, participants} ->
-        %Proto.ListParticipantsResponse{
+        %Business.ListParticipantsResponse{
           participants: Enum.map(participants, &participant_to_proto/1)
         }
 
@@ -144,7 +163,7 @@ defmodule Scalegraph.Participant.Server do
   def get_participant_accounts(request, _stream) do
     case Core.get_participant_accounts(request.participant_id) do
       {:ok, accounts} ->
-        %Proto.GetParticipantAccountsResponse{
+        %Business.GetParticipantAccountsResponse{
           accounts: Enum.map(accounts, &account_to_proto/1)
         }
 
@@ -176,6 +195,7 @@ defmodule Scalegraph.Participant.Server do
 
       {:error, {:schema_mismatch, message}} ->
         Logger.error("Schema mismatch error: #{message}")
+
         business_error(
           :failed_precondition,
           "Database schema mismatch. The participants table may have been created with an older schema. Try recreating the table or clearing the database."
@@ -209,6 +229,7 @@ defmodule Scalegraph.Participant.Server do
 
       {:error, {:schema_mismatch, message}} ->
         Logger.error("Schema mismatch error: #{message}")
+
         business_error(
           :failed_precondition,
           "Database schema mismatch. The participants table may have been created with an older schema. Try recreating the table or clearing the database."
@@ -225,7 +246,7 @@ defmodule Scalegraph.Participant.Server do
   def list_services(request, _stream) do
     case Core.list_services(request.participant_id) do
       {:ok, services} ->
-        %Proto.ListServicesResponse{
+        %Business.ListServicesResponse{
           services: services
         }
 
@@ -251,18 +272,32 @@ defmodule Scalegraph.Participant.Server do
   # Private helpers
 
   defp participant_to_proto(participant) do
-    %Proto.Participant{
+    # Convert contact map to Contact proto
+    contact_map = participant.contact || %{}
+    contact_proto = %Common.Contact{
+      email: Map.get(contact_map, :email, "") || Map.get(contact_map, "email", ""),
+      phone: Map.get(contact_map, :phone, "") || Map.get(contact_map, "phone", ""),
+      website: Map.get(contact_map, :website, "") || Map.get(contact_map, "website", ""),
+      address: Map.get(contact_map, :address, "") || Map.get(contact_map, "address", ""),
+      postal_code: Map.get(contact_map, :postal_code, "") || Map.get(contact_map, "postal_code", ""),
+      city: Map.get(contact_map, :city, "") || Map.get(contact_map, "city", ""),
+      country: Map.get(contact_map, :country, "") || Map.get(contact_map, "country", "")
+    }
+    
+    %Common.Participant{
       id: participant.id,
       name: participant.name,
       role: Map.get(@reverse_role_mapping, participant.role, :PARTICIPANT_ROLE_UNSPECIFIED),
       created_at: participant.created_at,
       metadata: participant.metadata || %{},
-      services: participant.services || []
+      services: participant.services || [],
+      about: participant.about || "",
+      contact: contact_proto
     }
   end
 
   defp account_to_proto(account) do
-    %Proto.Account{
+    %Common.Account{
       id: account.id,
       participant_id: account.participant_id || "",
       account_type:

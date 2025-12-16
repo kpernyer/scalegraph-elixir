@@ -11,6 +11,7 @@ defmodule Scalegraph.Participant.Core do
   """
 
   alias Scalegraph.Storage.Schema
+  alias Scalegraph.Ledger.Storage, as: LedgerStorage
 
   @doc """
   Create a new participant.
@@ -24,55 +25,67 @@ defmodule Scalegraph.Participant.Core do
   ## Example
       create_participant("assa_abloy", "ASSA ABLOY", :access_provider)
   """
-  def create_participant(id, name, role, metadata \\ %{})
+  def create_participant(id, name, role, metadata \\ %{}, about \\ "", contact \\ %{})
       when is_binary(id) and is_binary(name) and is_atom(role) do
-    unless role in Schema.participant_roles() do
-      {:error, {:invalid_role, role, Schema.participant_roles()}}
-    else
+    # Validate role first
+    if role in Schema.participant_roles() do
       created_at = System.system_time(:millisecond)
 
       result =
         :mnesia.transaction(fn ->
-          case :mnesia.read(Schema.participants_table(), id) do
-            [] ->
-              services = []
-
-              record =
-                {Schema.participants_table(), id, name, role, created_at, metadata, services}
-
-              :mnesia.write(record)
-
-              {:ok,
-               %{
-                 id: id,
-                 name: name,
-                 role: role,
-                 created_at: created_at,
-                 metadata: metadata,
-                 services: services
-               }}
-
-            [_existing] ->
-              :mnesia.abort({:error, :participant_exists})
-          end
+          create_participant_record(id, name, role, created_at, metadata, about, contact)
         end)
 
-      case result do
-        {:atomic, {:ok, participant}} ->
-          {:ok, participant}
-
-        {:aborted, {:error, reason}} ->
-          {:error, reason}
-
-        {:aborted, {:bad_type, record}} ->
-          {:error,
-           {:schema_mismatch,
-            "Table schema mismatch. Record: #{inspect(record)}. Expected 6 attributes: [:id, :name, :role, :created_at, :metadata, :services]. The table may need to be recreated with the correct schema."}}
-
-        {:aborted, reason} ->
-          {:error, reason}
-      end
+      handle_participant_creation_result(result)
+    else
+      {:error, {:invalid_role, role, Schema.participant_roles()}}
     end
+  end
+
+  # Private participant creation helpers
+
+  defp create_participant_record(id, name, role, created_at, metadata, about, contact) do
+    case :mnesia.read(Schema.participants_table(), id) do
+      [] ->
+        services = []
+        # Ensure contact is a map
+        contact_map = if is_map(contact), do: contact, else: %{}
+        record = {Schema.participants_table(), id, name, role, created_at, metadata, services, about, contact_map}
+        :mnesia.write(record)
+
+        {:ok,
+         %{
+           id: id,
+           name: name,
+           role: role,
+           created_at: created_at,
+           metadata: metadata,
+           services: services,
+           about: about,
+           contact: contact_map
+         }}
+
+      [_existing] ->
+        :mnesia.abort({:error, :participant_exists})
+    end
+  end
+
+  defp handle_participant_creation_result({:atomic, {:ok, participant}}) do
+    {:ok, participant}
+  end
+
+  defp handle_participant_creation_result({:aborted, {:error, reason}}) do
+    {:error, reason}
+  end
+
+  defp handle_participant_creation_result({:aborted, {:bad_type, record}}) do
+    {:error,
+     {:schema_mismatch,
+      "Table schema mismatch. Record: #{inspect(record)}. Expected 8 attributes: [:id, :name, :role, :created_at, :metadata, :services, :about, :contact]. The table may need to be recreated with the correct schema."}}
+  end
+
+  defp handle_participant_creation_result({:aborted, reason}) do
+    {:error, reason}
   end
 
   @doc """
@@ -82,10 +95,8 @@ defmodule Scalegraph.Participant.Core do
     result =
       :mnesia.transaction(fn ->
         case :mnesia.read(Schema.participants_table(), id) do
-          # Handle both old format (5 fields) and new format (6 fields) for backward compatibility
+          # Handle old formats for backward compatibility
           [{_table, id, name, role, created_at, metadata}] ->
-            services = []
-
             {:ok,
              %{
                id: id,
@@ -93,7 +104,9 @@ defmodule Scalegraph.Participant.Core do
                role: role,
                created_at: created_at,
                metadata: metadata,
-               services: services
+               services: [],
+               about: "",
+               contact: %{}
              }}
 
           [{_table, id, name, role, created_at, metadata, services}] ->
@@ -104,7 +117,29 @@ defmodule Scalegraph.Participant.Core do
                role: role,
                created_at: created_at,
                metadata: metadata,
-               services: services || []
+               services: services || [],
+               about: "",
+               contact: %{}
+             }}
+
+          [{_table, id, name, role, created_at, metadata, services, about, contact}] ->
+            # Handle both old string format and new map format for backward compatibility
+            contact_map = cond do
+              is_map(contact) -> contact
+              is_binary(contact) -> %{}  # Old string format, convert to empty map
+              true -> %{}
+            end
+            
+            {:ok,
+             %{
+               id: id,
+               name: name,
+               role: role,
+               created_at: created_at,
+               metadata: metadata,
+               services: services || [],
+               about: about || "",
+               contact: contact_map
              }}
 
           [] ->
@@ -124,40 +159,89 @@ defmodule Scalegraph.Participant.Core do
   def list_participants(role \\ nil) do
     result =
       :mnesia.transaction(fn ->
-        :mnesia.foldl(
-          fn record, acc ->
-            # Handle both old format (5 fields) and new format (6 fields)
-            {id, name, r, created_at, metadata, services} =
-              case record do
-                {_table, i, n, ro, ca, m} -> {i, n, ro, ca, m, []}
-                {_table, i, n, ro, ca, m, s} -> {i, n, ro, ca, m, s || []}
-              end
-
-            if role == nil or r == role do
-              [
-                %{
-                  id: id,
-                  name: name,
-                  role: r,
-                  created_at: created_at,
-                  metadata: metadata,
-                  services: services
-                }
-                | acc
-              ]
-            else
-              acc
-            end
-          end,
-          [],
-          Schema.participants_table()
-        )
+        collect_participants(role)
       end)
 
     case result do
       {:atomic, participants} -> {:ok, Enum.reverse(participants)}
       {:aborted, reason} -> {:error, reason}
     end
+  end
+
+  defp collect_participants(role) do
+    :mnesia.foldl(
+      fn record, acc ->
+        participant = normalize_participant_record_for_listing(record)
+
+        if should_include_participant?(participant, role) do
+          [participant | acc]
+        else
+          acc
+        end
+      end,
+      [],
+      Schema.participants_table()
+    )
+  end
+
+  # Private participant listing helpers
+
+  defp normalize_participant_record_for_listing({_table, id, name, role, created_at, metadata}) do
+    # Old format (5 fields) - add services, about, contact
+    %{
+      id: id,
+      name: name,
+      role: role,
+      created_at: created_at,
+      metadata: metadata,
+      services: [],
+      about: "",
+      contact: %{}
+    }
+  end
+
+  defp normalize_participant_record_for_listing(
+         {_table, id, name, role, created_at, metadata, services}
+       ) do
+    # Format (6 fields) - add about, contact
+    %{
+      id: id,
+      name: name,
+      role: role,
+      created_at: created_at,
+      metadata: metadata,
+      services: services || [],
+      about: "",
+      contact: %{}
+    }
+  end
+
+  defp normalize_participant_record_for_listing(
+         {_table, id, name, role, created_at, metadata, services, about, contact}
+       ) do
+    # New format (8 fields) - ensure contact is a map
+    contact_map = cond do
+      is_map(contact) -> contact
+      is_binary(contact) -> %{}  # Old string format
+      true -> %{}
+    end
+    
+    %{
+      id: id,
+      name: name,
+      role: role,
+      created_at: created_at,
+      metadata: metadata,
+      services: services || [],
+      about: about || "",
+      contact: contact_map
+    }
+  end
+
+  defp should_include_participant?(_participant, nil), do: true
+
+  defp should_include_participant?(participant, role) do
+    participant.role == role
   end
 
   @doc """
@@ -167,7 +251,7 @@ defmodule Scalegraph.Participant.Core do
     result =
       :mnesia.transaction(fn ->
         # Use the secondary index on participant_id
-        :mnesia.index_read(Schema.accounts_table(), participant_id, :participant_id)
+        :mnesia.index_read(LedgerStorage.accounts_table(), participant_id, :participant_id)
         |> Enum.map(fn {_table, id, ^participant_id, account_type, balance, created_at, metadata} ->
           %{
             id: id,
@@ -209,41 +293,62 @@ defmodule Scalegraph.Participant.Core do
 
     result =
       :mnesia.transaction(fn ->
-        # Verify participant exists
-        case :mnesia.read(Schema.participants_table(), participant_id) do
-          [] ->
-            :mnesia.abort({:error, :participant_not_found})
+        verify_participant_exists(participant_id)
 
-          [_participant] ->
-            # Check account doesn't exist
-            case :mnesia.read(Schema.accounts_table(), account_id) do
-              [] ->
-                record =
-                  {Schema.accounts_table(), account_id, participant_id, account_type,
-                   initial_balance, created_at, metadata}
-
-                :mnesia.write(record)
-
-                {:ok,
-                 %{
-                   id: account_id,
-                   participant_id: participant_id,
-                   account_type: account_type,
-                   balance: initial_balance,
-                   created_at: created_at,
-                   metadata: metadata
-                 }}
-
-              [_existing] ->
-                :mnesia.abort({:error, :account_exists})
-            end
-        end
+        create_account_record(
+          account_id,
+          participant_id,
+          account_type,
+          initial_balance,
+          created_at,
+          metadata
+        )
       end)
 
     case result do
       {:atomic, {:ok, account}} -> {:ok, account}
       {:aborted, {:error, reason}} -> {:error, reason}
       {:aborted, reason} -> {:error, reason}
+    end
+  end
+
+  # Private account creation helpers
+
+  defp verify_participant_exists(participant_id) do
+    case :mnesia.read(Schema.participants_table(), participant_id) do
+      [] -> :mnesia.abort({:error, :participant_not_found})
+      [_participant] -> :ok
+    end
+  end
+
+  defp create_account_record(
+         account_id,
+         participant_id,
+         account_type,
+         initial_balance,
+         created_at,
+         metadata
+       ) do
+    case :mnesia.read(LedgerStorage.accounts_table(), account_id) do
+      [] ->
+        record =
+          {LedgerStorage.accounts_table(), account_id, participant_id, account_type, initial_balance,
+           created_at, metadata}
+
+        :mnesia.write(record)
+
+        {:ok,
+         %{
+           id: account_id,
+           participant_id: participant_id,
+           account_type: account_type,
+           balance: initial_balance,
+           created_at: created_at,
+           metadata: metadata
+         }}
+
+      [_existing] ->
+        :mnesia.abort({:error, :account_exists})
     end
   end
 
@@ -257,68 +362,106 @@ defmodule Scalegraph.Participant.Core do
       when is_binary(participant_id) and is_binary(service_id) do
     result =
       :mnesia.transaction(fn ->
-        case :mnesia.read(Schema.participants_table(), participant_id) do
-          [] ->
-            :mnesia.abort({:error, :not_found})
-
-          # Handle old format (5 fields)
-          [{_table, id, name, role, created_at, metadata}] ->
-            services = [service_id]
-            record = {Schema.participants_table(), id, name, role, created_at, metadata, services}
-            :mnesia.write(record)
-
-            {:ok,
-             %{
-               id: id,
-               name: name,
-               role: role,
-               created_at: created_at,
-               metadata: metadata,
-               services: services
-             }}
-
-          # Handle new format (6 fields)
-          [{_table, id, name, role, created_at, metadata, existing_services}] ->
-            services = existing_services || []
-
-            if service_id in services do
-              :mnesia.abort({:error, :service_exists})
-            else
-              updated_services = [service_id | services]
-
-              record =
-                {Schema.participants_table(), id, name, role, created_at, metadata,
-                 updated_services}
-
-              :mnesia.write(record)
-
-              {:ok,
-               %{
-                 id: id,
-                 name: name,
-                 role: role,
-                 created_at: created_at,
-                 metadata: metadata,
-                 services: updated_services
-               }}
-            end
-        end
+        add_service_to_participant(participant_id, service_id)
       end)
 
-    case result do
-      {:atomic, {:ok, participant}} ->
-        {:ok, participant}
+    handle_service_operation_result(result)
+  end
 
-      {:aborted, {:error, reason}} ->
-        {:error, reason}
+  # Private service operation helpers
 
-      {:aborted, {:bad_type, record}} ->
-        {:error,
-         {:schema_mismatch,
-          "Table schema mismatch. Record: #{inspect(record)}. Expected 6 attributes: [:id, :name, :role, :created_at, :metadata, :services]. The table may need to be recreated with the correct schema."}}
+  defp add_service_to_participant(participant_id, service_id) do
+    case :mnesia.read(Schema.participants_table(), participant_id) do
+      [] ->
+        :mnesia.abort({:error, :not_found})
 
-      {:aborted, reason} ->
-        {:error, reason}
+      # Handle old format (5 fields)
+      [{_table, id, name, role, created_at, metadata}] ->
+        services = [service_id]
+        record = {Schema.participants_table(), id, name, role, created_at, metadata, services, "", %{}}
+        :mnesia.write(record)
+
+        {:ok,
+         %{
+           id: id,
+           name: name,
+           role: role,
+           created_at: created_at,
+           metadata: metadata,
+           services: services,
+           about: "",
+           contact: %{}
+         }}
+
+      # Handle format (6 fields - services added)
+      [{_table, id, name, role, created_at, metadata, existing_services}] ->
+        add_service_to_existing_list(
+          id,
+          name,
+          role,
+          created_at,
+          metadata,
+          existing_services,
+          service_id,
+          "",
+          %{}
+        )
+
+      # Handle current format (8 fields - with about and contact)
+      [{_table, id, name, role, created_at, metadata, existing_services, about, contact}] ->
+        contact_map = cond do
+          is_map(contact) -> contact
+          is_binary(contact) -> %{}  # Old string format
+          true -> %{}
+        end
+        add_service_to_existing_list(
+          id,
+          name,
+          role,
+          created_at,
+          metadata,
+          existing_services,
+          service_id,
+          about || "",
+          contact_map
+        )
+    end
+  end
+
+  defp add_service_to_existing_list(
+         id,
+         name,
+         role,
+         created_at,
+         metadata,
+         existing_services,
+         service_id,
+         about \\ "",
+         contact \\ %{}
+       ) do
+    services = existing_services || []
+
+    if service_id in services do
+      :mnesia.abort({:error, :service_exists})
+    else
+      updated_services = [service_id | services]
+
+      record =
+        {Schema.participants_table(), id, name, role, created_at, metadata, updated_services, about, contact}
+
+      :mnesia.write(record)
+
+      {:ok,
+       %{
+         id: id,
+         name: name,
+         role: role,
+         created_at: created_at,
+         metadata: metadata,
+         services: updated_services,
+         about: about,
+         contact: contact
+       }}
     end
   end
 
@@ -329,57 +472,109 @@ defmodule Scalegraph.Participant.Core do
       when is_binary(participant_id) and is_binary(service_id) do
     result =
       :mnesia.transaction(fn ->
-        case :mnesia.read(Schema.participants_table(), participant_id) do
-          [] ->
-            :mnesia.abort({:error, :not_found})
-
-          # Handle old format (5 fields)
-          [{_table, _id, _name, _role, _created_at, _metadata}] ->
-            :mnesia.abort({:error, :service_not_found})
-
-          # Handle new format (6 fields)
-          [{_table, id, name, role, created_at, metadata, services}] ->
-            services = services || []
-
-            if service_id not in services do
-              :mnesia.abort({:error, :service_not_found})
-            else
-              updated_services = List.delete(services, service_id)
-
-              record =
-                {Schema.participants_table(), id, name, role, created_at, metadata,
-                 updated_services}
-
-              :mnesia.write(record)
-
-              {:ok,
-               %{
-                 id: id,
-                 name: name,
-                 role: role,
-                 created_at: created_at,
-                 metadata: metadata,
-                 services: updated_services
-               }}
-            end
-        end
+        remove_service_from_participant(participant_id, service_id)
       end)
 
-    case result do
-      {:atomic, {:ok, participant}} ->
-        {:ok, participant}
+    handle_service_operation_result(result)
+  end
 
-      {:aborted, {:error, reason}} ->
-        {:error, reason}
+  defp remove_service_from_participant(participant_id, service_id) do
+    case :mnesia.read(Schema.participants_table(), participant_id) do
+      [] ->
+        :mnesia.abort({:error, :not_found})
 
-      {:aborted, {:bad_type, record}} ->
-        {:error,
-         {:schema_mismatch,
-          "Table schema mismatch. Record: #{inspect(record)}. Expected 6 attributes: [:id, :name, :role, :created_at, :metadata, :services]. The table may need to be recreated with the correct schema."}}
+      # Handle old format (5 fields)
+      [{_table, _id, _name, _role, _created_at, _metadata}] ->
+        :mnesia.abort({:error, :service_not_found})
 
-      {:aborted, reason} ->
-        {:error, reason}
+      # Handle format (6 fields - services added)
+      [{_table, id, name, role, created_at, metadata, services}] ->
+        remove_service_from_existing_list(
+          id,
+          name,
+          role,
+          created_at,
+          metadata,
+          services,
+          service_id,
+          "",
+          %{}
+        )
+
+      # Handle current format (8 fields - with about and contact)
+      [{_table, id, name, role, created_at, metadata, services, about, contact}] ->
+        contact_map = cond do
+          is_map(contact) -> contact
+          is_binary(contact) -> %{}  # Old string format
+          true -> %{}
+        end
+        remove_service_from_existing_list(
+          id,
+          name,
+          role,
+          created_at,
+          metadata,
+          services,
+          service_id,
+          about || "",
+          contact_map
+        )
     end
+  end
+
+  defp remove_service_from_existing_list(
+         id,
+         name,
+         role,
+         created_at,
+         metadata,
+         services,
+         service_id,
+         about \\ "",
+         contact \\ %{}
+       ) do
+    services = services || []
+
+    if service_id in services do
+      updated_services = List.delete(services, service_id)
+
+      record =
+        {Schema.participants_table(), id, name, role, created_at, metadata, updated_services, about, contact}
+
+      :mnesia.write(record)
+
+      {:ok,
+       %{
+         id: id,
+         name: name,
+         role: role,
+         created_at: created_at,
+         metadata: metadata,
+         services: updated_services,
+         about: about,
+         contact: contact
+       }}
+    else
+      :mnesia.abort({:error, :service_not_found})
+    end
+  end
+
+  defp handle_service_operation_result({:atomic, {:ok, participant}}) do
+    {:ok, participant}
+  end
+
+  defp handle_service_operation_result({:aborted, {:error, reason}}) do
+    {:error, reason}
+  end
+
+  defp handle_service_operation_result({:aborted, {:bad_type, record}}) do
+    {:error,
+     {:schema_mismatch,
+      "Table schema mismatch. Record: #{inspect(record)}. Expected 8 attributes: [:id, :name, :role, :created_at, :metadata, :services, :about, :contact]. The table may need to be recreated with the correct schema."}}
+  end
+
+  defp handle_service_operation_result({:aborted, reason}) do
+    {:error, reason}
   end
 
   @doc """

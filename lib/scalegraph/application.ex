@@ -9,11 +9,46 @@ defmodule Scalegraph.Application do
 
   require Logger
 
+  alias Scalegraph.Ledger.Storage, as: LedgerStorage
+  alias Scalegraph.Business.Storage, as: BusinessStorage
+  alias Scalegraph.SmartContracts.Storage, as: SmartContractsStorage
+  alias Scalegraph.Storage.Schema
+
   @impl true
   def start(_type, _args) do
-    # Initialize Mnesia schema before starting supervision tree
-    Logger.info("Initializing Scalegraph Ledger...")
-    case Scalegraph.Storage.Schema.init_with_migration() do
+    # Initialize all databases before starting supervision tree
+    Logger.info("Initializing Scalegraph databases...")
+
+    # Initialize pure ledger database
+    Logger.info("Initializing Ledger database...")
+    case LedgerStorage.init() do
+      :ok -> :ok
+      error ->
+        Logger.error("Failed to initialize ledger database: #{inspect(error)}")
+        {:error, error}
+    end
+
+    # Initialize business rules database
+    Logger.info("Initializing Business database...")
+    case BusinessStorage.init() do
+      :ok -> :ok
+      error ->
+        Logger.error("Failed to initialize business database: #{inspect(error)}")
+        {:error, error}
+    end
+
+    # Initialize smart contracts database
+    Logger.info("Initializing Smart Contracts database...")
+    case SmartContractsStorage.init() do
+      :ok -> :ok
+      error ->
+        Logger.error("Failed to initialize smart contracts database: #{inspect(error)}")
+        {:error, error}
+    end
+
+    # Initialize participants (legacy, still using old schema for now)
+    Logger.info("Initializing Participants...")
+    case Schema.init_with_migration() do
       :ok ->
         # Auto-seed with example data (ram_copies don't persist between restarts)
         Logger.info("Seeding database with example participants...")
@@ -25,22 +60,25 @@ defmodule Scalegraph.Application do
         {:error, :schema_migration_failed}
 
       error ->
-        Logger.error("Failed to initialize schema: #{inspect(error)}")
+        Logger.error("Failed to initialize participants schema: #{inspect(error)}")
         {:error, error}
     end
   end
 
   defp continue_startup do
-
-    port = Application.get_env(:scalegraph, :grpc_port, 50051)
+    port = Application.get_env(:scalegraph, :grpc_port, 50_051)
 
     # Check if port is already in use before attempting to start
     Logger.info("Checking if port #{port} is available...")
+
     case check_port_available(port) do
       {:ok, :available} ->
         Logger.info("Port #{port} is available, proceeding with server startup")
         # Port is available, proceed with starting the server
         children = [
+          # Smart contracts scheduler for automation and cron
+          Scalegraph.SmartContracts.Scheduler,
+          # gRPC server
           {GRPC.Server.Supervisor, endpoint: Scalegraph.Endpoint, port: port, start_server: true}
         ]
 
@@ -118,59 +156,68 @@ defmodule Scalegraph.Application do
 
   # Check if a port is available
   defp check_port_available(port) do
-    case :inet.getaddr(~c"localhost", :inet) do
-      {:ok, _ip} ->
-        case :gen_tcp.listen(port, [:binary, {:active, false}]) do
-          {:ok, socket} ->
-            :gen_tcp.close(socket)
-            {:ok, :available}
+    case resolve_localhost() do
+      {:ok, _ip} -> check_port_listen(port)
+      {:error, reason} -> {:error, reason}
+    end
+  end
 
-          {:error, :eaddrinuse} ->
-            # Port is in use, try to find the process
-            case find_port_process(port) do
-              {:ok, {pid, name}} ->
-                {:error, {:in_use, pid, name}}
+  defp resolve_localhost do
+    :inet.getaddr(~c"localhost", :inet)
+  end
 
-              {:error, _} ->
-                {:error, {:in_use, :unknown, "unknown process"}}
-            end
+  defp check_port_listen(port) do
+    case :gen_tcp.listen(port, [:binary, {:active, false}]) do
+      {:ok, socket} ->
+        :gen_tcp.close(socket)
+        {:ok, :available}
 
-          {:error, reason} ->
-            {:error, reason}
-        end
+      {:error, :eaddrinuse} ->
+        handle_port_in_use(port)
 
       {:error, reason} ->
         {:error, reason}
     end
   end
 
+  defp handle_port_in_use(port) do
+    case find_port_process(port) do
+      {:ok, {pid, name}} -> {:error, {:in_use, pid, name}}
+      {:error, _} -> {:error, {:in_use, :unknown, "unknown process"}}
+    end
+  end
+
   # Try to find the process using the port (Unix/Linux/macOS)
   defp find_port_process(port) do
     case System.cmd("lsof", ["-ti", ":#{port}"], stderr_to_stdout: true) do
-      {pid_str, 0} ->
-        pid_str = String.trim(pid_str)
-
-        if pid_str != "" do
-          pid = String.to_integer(pid_str)
-
-          # Try to get process name
-          case System.cmd("ps", ["-p", pid_str, "-o", "comm="], stderr_to_stdout: true) do
-            {name, 0} ->
-              name = String.trim(name)
-              {:ok, {pid, if(name == "", do: "unknown", else: name)}}
-
-            _ ->
-              {:ok, {pid, "unknown"}}
-          end
-        else
-          {:error, :not_found}
-        end
-
-      _ ->
-        {:error, :lsof_not_available}
+      {pid_str, 0} -> extract_process_info(pid_str)
+      _ -> {:error, :lsof_not_available}
     end
   rescue
     _ -> {:error, :check_failed}
+  end
+
+  defp extract_process_info(pid_str) do
+    pid_str = String.trim(pid_str)
+
+    if pid_str != "" do
+      pid = String.to_integer(pid_str)
+      process_name = get_process_name(pid_str)
+      {:ok, {pid, process_name}}
+    else
+      {:error, :not_found}
+    end
+  end
+
+  defp get_process_name(pid_str) do
+    case System.cmd("ps", ["-p", pid_str, "-o", "comm="], stderr_to_stdout: true) do
+      {name, 0} ->
+        name = String.trim(name)
+        if name == "", do: "unknown", else: name
+
+      _ ->
+        "unknown"
+    end
   end
 end
 

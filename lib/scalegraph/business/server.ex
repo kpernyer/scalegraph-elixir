@@ -8,12 +8,12 @@ defmodule Scalegraph.Business.Server do
   - AccessPayment: Real-time micro-transaction for access control
   """
 
-  use GRPC.Server, service: Scalegraph.Proto.BusinessService.Service
+  use GRPC.Server, service: Scalegraph.Business.BusinessService.Service
 
   require Logger
 
   alias Scalegraph.Business.Transactions
-  alias Scalegraph.Proto
+  alias Scalegraph.Business, as: BusinessProto
 
   @doc """
   Create a purchase invoice - records debt between buyer and supplier.
@@ -26,7 +26,7 @@ defmodule Scalegraph.Business.Server do
            request.reference
          ) do
       {:ok, result} ->
-        %Proto.BusinessTransactionResponse{
+        %BusinessProto.BusinessTransactionResponse{
           transaction_id: result.transaction_id,
           reference: result.invoice_ref,
           amount: result.amount,
@@ -54,7 +54,7 @@ defmodule Scalegraph.Business.Server do
            request.reference
          ) do
       {:ok, result} ->
-        %Proto.BusinessTransactionResponse{
+        %BusinessProto.BusinessTransactionResponse{
           transaction_id: result.transaction_id,
           reference: result.payment_ref,
           amount: result.amount,
@@ -92,7 +92,7 @@ defmodule Scalegraph.Business.Server do
            opts
          ) do
       {:ok, result} ->
-        %Proto.BusinessTransactionResponse{
+        %BusinessProto.BusinessTransactionResponse{
           transaction_id: result.transaction_id,
           reference: result.reference,
           amount: result.amount,
@@ -129,7 +129,7 @@ defmodule Scalegraph.Business.Server do
            request.reference
          ) do
       {:ok, result} ->
-        %Proto.BusinessTransactionResponse{
+        %BusinessProto.BusinessTransactionResponse{
           transaction_id: result.transaction_id,
           reference: result.loan_ref,
           amount: result.amount,
@@ -163,7 +163,7 @@ defmodule Scalegraph.Business.Server do
            request.reference
          ) do
       {:ok, result} ->
-        %Proto.BusinessTransactionResponse{
+        %BusinessProto.BusinessTransactionResponse{
           transaction_id: result.transaction_id,
           reference: result.repayment_ref,
           amount: result.amount,
@@ -192,7 +192,7 @@ defmodule Scalegraph.Business.Server do
   def get_outstanding_loans(request, _stream) do
     case Transactions.get_outstanding_loans(request.lender_id) do
       {:ok, total_outstanding} ->
-        %Proto.GetOutstandingLoansResponse{
+        %BusinessProto.GetOutstandingLoansResponse{
           lender_id: request.lender_id,
           total_outstanding: total_outstanding
         }
@@ -208,7 +208,7 @@ defmodule Scalegraph.Business.Server do
   def get_total_debt(request, _stream) do
     case Transactions.get_total_debt(request.borrower_id) do
       {:ok, total_debt} ->
-        %Proto.GetTotalDebtResponse{
+        %BusinessProto.GetTotalDebtResponse{
           borrower_id: request.borrower_id,
           total_debt: total_debt
         }

@@ -1,0 +1,234 @@
+syntax = "proto3";
+
+package scalegraph.smartcontracts;
+
+import "common.proto";
+import "ledger.proto";
+import "business-rules.proto";
+
+// Elixir-specific option (ignored by Rust/tonic)
+option elixir_module_prefix = "Scalegraph.Proto";
+
+// ============================================================================
+// Smart Contracts Service - Automation and Conditional Execution
+// ============================================================================
+
+// Contract types
+enum ContractType {
+  CONTRACT_TYPE_UNSPECIFIED = 0;
+  LOAN = 1;
+  INVOICE = 2;
+  SUBSCRIPTION = 3;
+  CONDITIONAL_PAYMENT = 4;
+  REVENUE_SHARE = 5;
+}
+
+// Contract status
+enum ContractStatus {
+  CONTRACT_STATUS_UNSPECIFIED = 0;
+  ACTIVE = 1;
+  PAUSED = 2;
+  COMPLETED = 3;
+  CANCELLED = 4;
+}
+
+// ============================================================================
+// Invoice Contract (with automation)
+// ============================================================================
+
+message InvoiceContract {
+  string id = 1;
+  string supplier_id = 2;
+  string buyer_id = 3;
+  int64 amount_cents = 4;
+  int64 issue_date = 5;   // Unix timestamp in milliseconds
+  int64 due_date = 6;     // Unix timestamp in milliseconds
+  string payment_terms = 7;  // e.g., "Net 30"
+  bool auto_debit = 8;     // Automatisk debitering på förfallodatum
+  int64 late_fee_cents = 9;  // Om inte betalt vid förfallodatum
+  string status = 10;      // "pending", "paid", "overdue", "cancelled"
+  string ledger_transaction_id = 11;  // Reference to ledger transaction
+  string reference = 12;
+  int64 created_at = 13;
+  int64 paid_at = 14;
+  map<string, string> metadata = 15;
+}
+
+// ============================================================================
+// Subscription Contract
+// ============================================================================
+
+message SubscriptionContract {
+  string id = 1;
+  string provider_id = 2;
+  string subscriber_id = 3;
+  int64 monthly_fee_cents = 4;
+  string billing_date = 5;  // e.g., "every 1st", "every 15th"
+  bool auto_debit = 6;       // Automatisk debitering
+  int32 cancellation_notice_days = 7;  // e.g., 30 days notice required
+  int64 start_date = 8;      // Unix timestamp in milliseconds
+  int64 end_date = 9;         // Unix timestamp in milliseconds (optional)
+  string status = 10;         // "active", "cancelled", "expired"
+  repeated string payment_transaction_ids = 11;  // All subscription payment transactions
+  int64 next_billing_date = 12;  // Unix timestamp in milliseconds
+  int64 created_at = 13;
+  map<string, string> metadata = 14;
+}
+
+// ============================================================================
+// Conditional Payment Contract
+// ============================================================================
+
+message ConditionalPaymentContract {
+  string id = 1;
+  string payer_id = 2;
+  string receiver_id = 3;
+  int64 amount_cents = 4;
+  string condition_type = 5;  // e.g., "if_service_completed", "if_condition_met"
+  string trigger = 6;          // e.g., "status = 'completed'"
+  map<string, string> condition_parameters = 7;
+  string status = 8;          // "pending", "conditions_met", "executed", "cancelled"
+  string ledger_transaction_id = 9;  // Reference to ledger transaction when executed
+  int64 created_at = 10;
+  int64 executed_at = 11;
+  map<string, string> metadata = 12;
+}
+
+// ============================================================================
+// Revenue Share Contract
+// ============================================================================
+
+message RevenueShareParty {
+  string participant_id = 1;
+  double share = 2;  // e.g., 0.70 for 70%
+}
+
+message RevenueShareContract {
+  string id = 1;
+  string transaction_type = 2;  // e.g., "service_sale"
+  repeated RevenueShareParty parties = 3;
+  bool auto_split = 4;  // Automatisk fördelning vid varje transaktion
+  string status = 5;    // "active", "paused", "completed", "cancelled"
+  repeated string distribution_transaction_ids = 6;  // All revenue distribution transactions
+  int64 created_at = 7;
+  int64 last_distributed_at = 8;
+  map<string, string> metadata = 9;
+}
+
+// ============================================================================
+// Contract Management Operations
+// ============================================================================
+
+message CreateInvoiceContractRequest {
+  string supplier_id = 1;
+  string buyer_id = 2;
+  int64 amount_cents = 3;
+  int64 issue_date = 4;
+  int64 due_date = 5;
+  string payment_terms = 6;
+  bool auto_debit = 7;
+  int64 late_fee_cents = 8;
+  string reference = 9;
+  map<string, string> metadata = 10;
+}
+
+message CreateSubscriptionContractRequest {
+  string provider_id = 1;
+  string subscriber_id = 2;
+  int64 monthly_fee_cents = 3;
+  string billing_date = 4;
+  bool auto_debit = 5;
+  int32 cancellation_notice_days = 6;
+  int64 start_date = 7;
+  int64 end_date = 8;  // Optional
+  map<string, string> metadata = 9;
+}
+
+message CreateConditionalPaymentRequest {
+  string payer_id = 1;
+  string receiver_id = 2;
+  int64 amount_cents = 3;
+  string condition_type = 4;
+  string trigger = 5;
+  map<string, string> condition_parameters = 6;
+  map<string, string> metadata = 7;
+}
+
+message CreateRevenueShareContractRequest {
+  string transaction_type = 1;
+  repeated RevenueShareParty parties = 2;
+  bool auto_split = 3;
+  map<string, string> metadata = 4;
+}
+
+message GetContractRequest {
+  string contract_id = 1;
+  ContractType contract_type = 2;
+}
+
+message ListContractsRequest {
+  ContractType contract_type = 1;  // Optional filter by type
+  string status = 2;               // Optional filter by status
+  string participant_id = 3;       // Optional filter by participant (any role)
+  int32 limit = 4;                // Max results (default: 100)
+}
+
+message ContractResponse {
+  oneof contract {
+    InvoiceContract invoice = 1;
+    SubscriptionContract subscription = 2;
+    ConditionalPaymentContract conditional_payment = 3;
+    RevenueShareContract revenue_share = 4;
+  }
+}
+
+message ListContractsResponse {
+  repeated ContractResponse contracts = 1;
+}
+
+message ExecuteContractRequest {
+  string contract_id = 1;
+  ContractType contract_type = 2;
+}
+
+message ExecuteContractResponse {
+  string contract_id = 1;
+  bool executed = 2;
+  string message = 3;
+  repeated string transaction_ids = 4;  // Ledger transactions created
+}
+
+message UpdateContractStatusRequest {
+  string contract_id = 1;
+  ContractType contract_type = 2;
+  ContractStatus status = 3;
+}
+
+// ============================================================================
+// Smart Contract Service Definition
+// ============================================================================
+
+service SmartContractService {
+  // Invoice contracts
+  rpc CreateInvoiceContract(CreateInvoiceContractRequest) returns (InvoiceContract);
+  rpc GetInvoiceContract(GetContractRequest) returns (InvoiceContract);
+
+  // Subscription contracts
+  rpc CreateSubscriptionContract(CreateSubscriptionContractRequest) returns (SubscriptionContract);
+  rpc GetSubscriptionContract(GetContractRequest) returns (SubscriptionContract);
+
+  // Conditional payment contracts
+  rpc CreateConditionalPayment(CreateConditionalPaymentRequest) returns (ConditionalPaymentContract);
+  rpc GetConditionalPayment(GetContractRequest) returns (ConditionalPaymentContract);
+
+  // Revenue share contracts
+  rpc CreateRevenueShareContract(CreateRevenueShareContractRequest) returns (RevenueShareContract);
+  rpc GetRevenueShareContract(GetContractRequest) returns (RevenueShareContract);
+
+  // Generic contract operations
+  rpc GetContract(GetContractRequest) returns (ContractResponse);
+  rpc ListContracts(ListContractsRequest) returns (ListContractsResponse);
+  rpc ExecuteContract(ExecuteContractRequest) returns (ExecuteContractResponse);
+  rpc UpdateContractStatus(UpdateContractStatusRequest) returns (ContractResponse);
+}
+

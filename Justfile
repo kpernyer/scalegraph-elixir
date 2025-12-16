@@ -65,6 +65,36 @@ reset:
     mix scalegraph.seed --reset
     @echo "✅ Database reset complete"
 
+# Reset system to initial known state (PREDICTABLE)
+# This target:
+#   1. Keeps the schema intact
+#   2. Clears ALL data from all tables
+#   3. Reloads data from priv/seed_data.yaml
+# Server must NOT be running for this to work correctly.
+reset-system-to-initial-known-state:
+    @echo "═══════════════════════════════════════════════════════════════"
+    @echo "  RESET SYSTEM TO INITIAL KNOWN STATE"
+    @echo "═══════════════════════════════════════════════════════════════"
+    @echo ""
+    @echo "⚠️  CRITICAL: The server MUST NOT be running!"
+    @echo "   If the server is running, stop it first (Ctrl+C or kill process)"
+    @echo ""
+    @echo "This will:"
+    @echo "  ✓ Keep the database schema intact"
+    @echo "  ✓ Clear ALL data from all tables (participants, accounts, transactions)"
+    @echo "  ✓ Reload all data from priv/seed_data.yaml"
+    @echo ""
+    @echo "Starting reset process..."
+    @echo ""
+    mix scalegraph.seed --reset
+    @echo ""
+    @echo "═══════════════════════════════════════════════════════════════"
+    @echo "  ✅ System reset to initial known state complete"
+    @echo "═══════════════════════════════════════════════════════════════"
+    @echo ""
+    @echo "The database now contains only the data from priv/seed_data.yaml"
+    @echo "You can now start the server with: just run"
+
 # Seed via running server (use when server IS running)
 seed-live:
     @echo "🗄️  Seeding via running server..."
@@ -270,6 +300,7 @@ console:
 # Regenerate protobuf files (if using protoc directly)
 proto:
     @echo "📝 Regenerating protobuf files..."
+    @echo "   Source: proto/ledger.proto (single source of truth)"
     @echo "   Elixir: Manual generation required (see lib/scalegraph/proto/)"
     @echo "   Rust: Auto-generated on cargo build via build.rs"
     cd cli && cargo build

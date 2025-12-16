@@ -27,6 +27,7 @@ defmodule Scalegraph.Business.Transactions do
   require Logger
 
   alias Scalegraph.Ledger.Core, as: Ledger
+  alias Scalegraph.Business.Contracts
 
   # ============================================================================
   # Purchase / Invoice Transactions
@@ -65,16 +66,38 @@ defmodule Scalegraph.Business.Transactions do
 
     case Ledger.transfer(entries, "INVOICE: #{reference}") do
       {:ok, tx} ->
-        Logger.info("Purchase invoice created: #{reference} for #{format_amount(amount)}")
+        # Create invoice contract after ledger transaction succeeds
+        case Contracts.create_invoice(supplier_id, buyer_id, amount, tx.id, reference) do
+          {:ok, invoice} ->
+            Logger.info("Purchase invoice created: #{reference} for #{format_amount(amount)}")
 
-        {:ok,
-         %{
-           transaction_id: tx.id,
-           invoice_ref: reference,
-           supplier: supplier_id,
-           buyer: buyer_id,
-           amount: amount
-         }}
+            {:ok,
+             %{
+               transaction_id: tx.id,
+               invoice_id: invoice.id,
+               invoice_ref: reference,
+               supplier: supplier_id,
+               buyer: buyer_id,
+               amount: amount
+             }}
+
+          {:error, contract_reason} ->
+            # Ledger transaction succeeded but contract creation failed
+            # This is a partial failure - log it but return success for ledger transaction
+            Logger.error(
+              "Invoice ledger transaction succeeded but contract creation failed: #{inspect(contract_reason)}"
+            )
+
+            {:ok,
+             %{
+               transaction_id: tx.id,
+               invoice_ref: reference,
+               supplier: supplier_id,
+               buyer: buyer_id,
+               amount: amount,
+               warning: "Contract creation failed"
+             }}
+        end
 
       {:error, reason} ->
         Logger.warning("Purchase invoice failed: #{inspect(reason)}")
@@ -123,6 +146,11 @@ defmodule Scalegraph.Business.Transactions do
 
     case Ledger.transfer(entries, "PAYMENT: #{reference}") do
       {:ok, tx} ->
+        # Try to find and update invoice contract
+        # Note: We search by supplier/buyer/amount since we may not have invoice_id
+        # In a production system, you'd want to pass invoice_id explicitly
+        update_invoice_contract(supplier_id, buyer_id, amount, tx.id)
+
         Logger.info("Invoice paid: #{reference} for #{format_amount(amount)}")
 
         {:ok,
@@ -292,8 +320,8 @@ defmodule Scalegraph.Business.Transactions do
   """
   def create_loan(lender_id, borrower_id, amount, reference)
       when is_binary(lender_id) and is_binary(borrower_id) and is_integer(amount) and amount > 0 do
-    alias Scalegraph.Participant.Core, as: Participant
     alias Scalegraph.Ledger.Core, as: Ledger
+    alias Scalegraph.Participant.Core, as: Participant
 
     lender_operating = "#{lender_id}:operating"
     lender_receivables = "#{lender_id}:receivables"
@@ -317,16 +345,37 @@ defmodule Scalegraph.Business.Transactions do
 
       case Ledger.transfer(entries, "LOAN: #{reference}") do
         {:ok, tx} ->
-          Logger.info("Loan created: #{reference} for #{format_amount(amount)}")
+          # Create loan contract after ledger transaction succeeds
+          case Contracts.create_loan(lender_id, borrower_id, amount, tx.id, reference) do
+            {:ok, loan} ->
+              Logger.info("Loan created: #{reference} for #{format_amount(amount)}")
 
-          {:ok,
-           %{
-             transaction_id: tx.id,
-             loan_ref: reference,
-             lender: lender_id,
-             borrower: borrower_id,
-             amount: amount
-           }}
+              {:ok,
+               %{
+                 transaction_id: tx.id,
+                 loan_id: loan.id,
+                 loan_ref: reference,
+                 lender: lender_id,
+                 borrower: borrower_id,
+                 amount: amount
+               }}
+
+            {:error, contract_reason} ->
+              # Ledger transaction succeeded but contract creation failed
+              Logger.error(
+                "Loan ledger transaction succeeded but contract creation failed: #{inspect(contract_reason)}"
+              )
+
+              {:ok,
+               %{
+                 transaction_id: tx.id,
+                 loan_ref: reference,
+                 lender: lender_id,
+                 borrower: borrower_id,
+                 amount: amount,
+                 warning: "Contract creation failed"
+               }}
+          end
 
         {:error, reason} ->
           Logger.warning("Loan creation failed: #{inspect(reason)}")
@@ -378,6 +427,9 @@ defmodule Scalegraph.Business.Transactions do
 
     case Ledger.transfer(entries, "LOAN_REPAYMENT: #{reference}") do
       {:ok, tx} ->
+        # Try to find and update loan contract
+        update_loan_contract(lender_id, borrower_id, tx.id)
+
         Logger.info("Loan repaid: #{reference} for #{format_amount(amount)}")
 
         {:ok,
@@ -468,8 +520,8 @@ defmodule Scalegraph.Business.Transactions do
 
   # Ensure an account exists, create it if it doesn't
   defp ensure_account_exists(participant_id, account_type) do
-    alias Scalegraph.Participant.Core, as: Participant
     alias Scalegraph.Ledger.Core, as: Ledger
+    alias Scalegraph.Participant.Core, as: Participant
 
     account_id = "#{participant_id}:#{account_type}"
 
@@ -495,5 +547,55 @@ defmodule Scalegraph.Business.Transactions do
     timestamp = DateTime.utc_now() |> DateTime.to_unix()
     random = :crypto.strong_rand_bytes(4) |> Base.encode16(case: :lower)
     "ACC-#{timestamp}-#{random}"
+  end
+
+  # Helper to update invoice contract when payment is made
+  defp update_invoice_contract(supplier_id, buyer_id, amount, payment_tx_id) do
+    # Find pending invoice matching supplier/buyer/amount
+    case Contracts.list_invoices(supplier_id: supplier_id, buyer_id: buyer_id, status: :pending) do
+      {:ok, invoices} ->
+        # Find invoice with matching amount (or closest)
+        matching_invoice =
+          Enum.find(invoices, fn invoice ->
+            invoice.amount == amount
+          end)
+
+        if matching_invoice do
+          Contracts.mark_invoice_paid(matching_invoice.id, payment_tx_id)
+        else
+          Logger.warning(
+            "Could not find matching invoice contract for payment: supplier=#{supplier_id}, buyer=#{buyer_id}, amount=#{amount}"
+          )
+
+          :ok
+        end
+
+      {:error, reason} ->
+        Logger.warning("Failed to list invoices for contract update: #{inspect(reason)}")
+        :ok
+    end
+  end
+
+  # Helper to update loan contract when repayment is made
+  defp update_loan_contract(lender_id, borrower_id, repayment_tx_id) do
+    # Find active loan matching lender/borrower
+    case Contracts.list_loans(lender_id: lender_id, borrower_id: borrower_id, status: :active) do
+      {:ok, loans} ->
+        # Add repayment to the first active loan (in production, you'd want to match by amount or loan_id)
+        if length(loans) > 0 do
+          loan = List.first(loans)
+          Contracts.add_loan_repayment(loan.id, repayment_tx_id)
+        else
+          Logger.warning(
+            "Could not find matching loan contract for repayment: lender=#{lender_id}, borrower=#{borrower_id}"
+          )
+
+          :ok
+        end
+
+      {:error, reason} ->
+        Logger.warning("Failed to list loans for contract update: #{inspect(reason)}")
+        :ok
+    end
   end
 end

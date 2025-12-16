@@ -92,6 +92,28 @@ end
 - **Module Attributes**: `@snake_case` (e.g., `@accounts_table`)
 - **Atoms**: `snake_case` (e.g., `:account_exists`)
 
+**Additional Style Guidelines**:
+- **Aliases**: Keep alphabetically ordered within their group
+  ```elixir
+  # Good: Alphabetical order
+  alias Scalegraph.Ledger.Core, as: Ledger
+  alias Scalegraph.Participant.Core, as: Participant
+  
+  # Avoid: Out of order
+  alias Scalegraph.Participant.Core, as: Participant
+  alias Scalegraph.Ledger.Core, as: Ledger
+  ```
+- **Numbers**: Use underscores for numbers ≥ 10,000 for readability
+  ```elixir
+  # Good
+  port = 50_051
+  amount = 1_000_000
+  
+  # Avoid
+  port = 50051
+  amount = 1000000
+  ```
+
 ### 3.3 Function Arguments
 
 - Use guard clauses for type validation:
@@ -350,6 +372,17 @@ mix format --check-formatted
 mix credo --strict
 ```
 
+**Pre-commit Checklist**:
+- [ ] All files formatted (`mix format`)
+- [ ] No Credo warnings (`mix credo --strict`)
+- [ ] All tests pass (`mix test`)
+- [ ] No linter errors
+
+**Continuous Integration**:
+- Run `mix format --check-formatted` in CI to catch formatting issues
+- Run `mix credo --strict` to enforce code quality standards
+- Fail builds on any Credo warnings or formatting issues
+
 ### 9.2 Concurrency & Processes
 
 - Never hold locks across message receives (use `receive` with timeouts)
@@ -365,6 +398,155 @@ mix credo --strict
 - Parameterize DB queries; avoid string interpolation
 - Avoid `if Application.get_env/3` branches in production code; use dependency injection via function parameters or config
 - Never hardcode table names; use schema module functions
+
+### 9.4 Managing Function Complexity
+
+**Complexity Thresholds**:
+- **Cyclomatic complexity**: Keep functions under 9 (Credo default)
+- **Nesting depth**: Maximum 2 levels of nesting
+- **Function length**: Extract helpers when functions exceed ~30-40 lines
+
+**Refactoring Patterns**:
+
+1. **Extract validation logic**:
+   ```elixir
+   # Before: Validation mixed with business logic
+   def create_account(id, balance) do
+     if balance < 0 do
+       {:error, :invalid_balance}
+     else
+       # ... business logic
+     end
+   end
+
+   # After: Validation extracted
+   def create_account(id, balance) do
+     with :ok <- validate_balance(balance) do
+       do_create_account(id, balance)
+     end
+   end
+
+   defp validate_balance(balance) when balance >= 0, do: :ok
+   defp validate_balance(_), do: {:error, :invalid_balance}
+   ```
+
+2. **Extract data transformation helpers**:
+   ```elixir
+   # Before: Complex transformation inline
+   def list_transactions(opts) do
+     :mnesia.transaction(fn ->
+       all_txs = :mnesia.foldl(..., [])
+       filtered = if account_filter do
+         Enum.filter(all_txs, fn tx ->
+           Enum.any?(tx.entries, fn entry ->
+             entry.account_id == account_filter
+           end)
+         end)
+       else
+         all_txs
+       end
+       # ...
+     end)
+   end
+
+   # After: Helpers extracted
+   def list_transactions(opts) do
+     :mnesia.transaction(fn ->
+       all_txs = fetch_all_transactions()
+       filtered = apply_account_filter(all_txs, opts[:account_id])
+       sort_and_limit_transactions(filtered, opts[:limit])
+     end)
+   end
+
+   defp apply_account_filter(all_txs, nil), do: all_txs
+   defp apply_account_filter(all_txs, account_id) do
+     Enum.filter(all_txs, &transaction_involves_account?(&1, account_id))
+   end
+   ```
+
+3. **Use pattern matching in helper functions**:
+   ```elixir
+   # Good: Multiple function heads for different cases
+   defp normalize_record({_table, id, name, role, created_at, metadata}) do
+     # Old format (5 fields)
+     {id, name, role, created_at, metadata, []}
+   end
+
+   defp normalize_record({_table, id, name, role, created_at, metadata, services}) do
+     # New format (6 fields)
+     {id, name, role, created_at, metadata, services || []}
+   end
+   ```
+
+4. **Prefer positive conditions**:
+   ```elixir
+   # Avoid: Negated conditions
+   unless role not in valid_roles do
+     # ...
+   end
+
+   # Prefer: Positive conditions
+   if role in valid_roles do
+     # ...
+   else
+     {:error, {:invalid_role, role}}
+   end
+   ```
+
+5. **Extract error handling helpers**:
+   ```elixir
+   # Before: Repeated error handling
+   case result do
+     {:atomic, {:ok, participant}} -> {:ok, participant}
+     {:aborted, {:error, reason}} -> {:error, reason}
+     {:aborted, {:bad_type, record}} -> {:error, {:schema_mismatch, ...}}
+     {:aborted, reason} -> {:error, reason}
+   end
+
+   # After: Reusable helper
+   defp handle_participant_creation_result({:atomic, {:ok, participant}}) do
+     {:ok, participant}
+   end
+   defp handle_participant_creation_result({:aborted, {:error, reason}}) do
+     {:error, reason}
+   end
+   # ... other cases
+   ```
+
+6. **Alias nested modules at the top**:
+   ```elixir
+   # Good: Alias at module level
+   alias Scalegraph.Storage.Schema
+
+   def start(_type, _args) do
+     case Schema.init_with_migration() do
+       # ...
+     end
+   end
+
+   # Avoid: Full module name in function body
+   def start(_type, _args) do
+     case Scalegraph.Storage.Schema.init_with_migration() do
+       # ...
+     end
+   end
+   ```
+
+**When to Refactor**:
+- Credo reports complexity > 9 or nesting depth > 2
+- Function is hard to test in isolation
+- Function has multiple responsibilities
+- Similar logic appears in multiple places (extract to shared helper)
+
+**Refactoring Checklist**:
+- [ ] Extract validation into separate functions
+- [ ] Extract data transformations into helpers
+- [ ] Use pattern matching in function heads when possible
+- [ ] Replace negated conditions with positive ones
+- [ ] Extract error handling into reusable helpers
+- [ ] Ensure all helper functions are `defp` (private)
+- [ ] Maintain exact functionality (no behavior changes)
+- [ ] Run tests to verify behavior preservation
 
 ---
 

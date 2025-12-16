@@ -1,0 +1,256 @@
+syntax = "proto3";
+
+package scalegraph.business;
+
+import "common.proto";
+import "ledger.proto";
+
+// Elixir-specific option (ignored by Rust/tonic)
+option elixir_module_prefix = "Scalegraph.Proto";
+
+// ============================================================================
+// Participant Service - Participant Management
+// ============================================================================
+
+message CreateParticipantRequest {
+  string id = 1;
+  string name = 2;
+  scalegraph.common.ParticipantRole role = 3;
+  map<string, string> metadata = 4;
+  string about = 5;
+  scalegraph.common.Contact contact = 6;
+}
+
+message GetParticipantRequest {
+  string participant_id = 1;
+}
+
+message ListParticipantsRequest {
+  scalegraph.common.ParticipantRole role = 1;  // optional filter
+}
+
+message ListParticipantsResponse {
+  repeated scalegraph.common.Participant participants = 1;
+}
+
+message CreateParticipantAccountRequest {
+  string participant_id = 1;
+  scalegraph.common.AccountType account_type = 2;
+  int64 initial_balance = 3;
+  map<string, string> metadata = 4;
+}
+
+message GetParticipantAccountsRequest {
+  string participant_id = 1;
+}
+
+message GetParticipantAccountsResponse {
+  repeated scalegraph.common.Account accounts = 1;
+}
+
+message AddServiceRequest {
+  string participant_id = 1;
+  string service_id = 2;
+}
+
+message RemoveServiceRequest {
+  string participant_id = 1;
+  string service_id = 2;
+}
+
+message ListServicesRequest {
+  string participant_id = 1;
+}
+
+message ListServicesResponse {
+  repeated string services = 1;
+}
+
+service ParticipantService {
+  rpc CreateParticipant(CreateParticipantRequest) returns (scalegraph.common.Participant);
+  rpc GetParticipant(GetParticipantRequest) returns (scalegraph.common.Participant);
+  rpc ListParticipants(ListParticipantsRequest) returns (ListParticipantsResponse);
+  rpc CreateParticipantAccount(CreateParticipantAccountRequest) returns (scalegraph.common.Account);
+  rpc GetParticipantAccounts(GetParticipantAccountsRequest) returns (GetParticipantAccountsResponse);
+  rpc AddService(AddServiceRequest) returns (scalegraph.common.Participant);
+  rpc RemoveService(RemoveServiceRequest) returns (scalegraph.common.Participant);
+  rpc ListServices(ListServicesRequest) returns (ListServicesResponse);
+}
+
+// ============================================================================
+// Business Rules Service - Business Contracts and Rules
+// ============================================================================
+
+// Business transaction response
+message BusinessTransactionResponse {
+  string transaction_id = 1;
+  string reference = 2;
+  int64 amount = 3;
+  int64 platform_fee = 4;  // Only for access payments with fees
+  string status = 5;      // "completed", "failed"
+  string message = 6;      // Human-readable result
+}
+
+// ============================================================================
+// Invoice Operations
+// ============================================================================
+
+message PurchaseInvoiceRequest {
+  string supplier_id = 1;
+  string buyer_id = 2;
+  int64 amount = 3;
+  string reference = 4;
+}
+
+message PayInvoiceRequest {
+  string supplier_id = 1;
+  string buyer_id = 2;
+  int64 amount = 3;
+  string reference = 4;
+}
+
+message GetInvoiceRequest {
+  string invoice_id = 1;
+}
+
+message Invoice {
+  string id = 1;
+  string supplier_id = 2;
+  string buyer_id = 3;
+  int64 amount = 4;
+  int64 issue_date = 5;   // Unix timestamp in milliseconds
+  int64 due_date = 6;      // Unix timestamp in milliseconds
+  string status = 7;       // "pending", "paid", "overdue", "cancelled"
+  string ledger_transaction_id = 8;  // Reference to ledger transaction
+  string reference = 9;
+  int64 created_at = 10;
+  int64 paid_at = 11;
+  map<string, string> metadata = 12;
+}
+
+message ListInvoicesRequest {
+  string supplier_id = 1;  // Optional filter
+  string buyer_id = 2;     // Optional filter
+  string status = 3;       // Optional filter
+  int32 limit = 4;         // Max results (default: 100)
+}
+
+message ListInvoicesResponse {
+  repeated Invoice invoices = 1;
+}
+
+// ============================================================================
+// Loan Operations
+// ============================================================================
+
+message CreateLoanRequest {
+  string lender_id = 1;
+  string borrower_id = 2;
+  int64 principal_cents = 3;
+  double annual_interest_rate = 4;  // e.g., 0.05 for 5%
+  int32 term_months = 5;
+  string reference = 6;
+}
+
+message RepayLoanRequest {
+  string lender_id = 1;
+  string borrower_id = 2;
+  int64 amount = 3;
+  string reference = 4;
+}
+
+message GetLoanRequest {
+  string loan_id = 1;
+}
+
+message LoanRepaymentSchedule {
+  int64 due_date = 1;      // Unix timestamp in milliseconds
+  int64 amount_cents = 2;   // Payment amount in cents
+  bool paid = 3;
+  string payment_transaction_id = 4;  // Reference to ledger transaction when paid
+}
+
+message Loan {
+  string id = 1;
+  string lender_id = 2;
+  string borrower_id = 3;
+  int64 principal_cents = 4;
+  double annual_interest_rate = 5;
+  int32 term_months = 6;
+  int64 monthly_payment_cents = 7;
+  int64 first_payment_due = 8;  // Unix timestamp in milliseconds
+  repeated LoanRepaymentSchedule repayment_schedule = 9;
+  string status = 10;  // "active", "repaid", "defaulted"
+  string disbursement_transaction_id = 11;  // Reference to ledger transaction
+  repeated string repayment_transaction_ids = 12;
+  string reference = 13;
+  int64 created_at = 14;
+  bool auto_execute = 15;  // Automatisk debitering på förfallodatum
+  map<string, string> metadata = 16;
+}
+
+message ListLoansRequest {
+  string lender_id = 1;   // Optional filter
+  string borrower_id = 2;  // Optional filter
+  string status = 3;      // Optional filter
+  int32 limit = 4;        // Max results (default: 100)
+}
+
+message ListLoansResponse {
+  repeated Loan loans = 1;
+}
+
+message GetOutstandingLoansRequest {
+  string lender_id = 1;
+}
+
+message GetOutstandingLoansResponse {
+  string lender_id = 1;
+  int64 total_outstanding = 2;
+}
+
+message GetTotalDebtRequest {
+  string borrower_id = 1;
+}
+
+message GetTotalDebtResponse {
+  string borrower_id = 1;
+  int64 total_debt = 2;
+}
+
+// ============================================================================
+// Access Payment
+// ============================================================================
+
+message AccessPaymentRequest {
+  string payer_id = 1;
+  string access_provider_id = 2;
+  int64 amount = 3;
+  string reference = 4;
+  string platform_id = 5;      // Optional platform for fees
+  int64 platform_fee = 6;      // Optional platform fee in cents
+}
+
+// ============================================================================
+// Business Service Definition
+// ============================================================================
+
+service BusinessService {
+  // Invoice operations
+  rpc PurchaseInvoice(PurchaseInvoiceRequest) returns (BusinessTransactionResponse);
+  rpc PayInvoice(PayInvoiceRequest) returns (BusinessTransactionResponse);
+  rpc GetInvoice(GetInvoiceRequest) returns (Invoice);
+  rpc ListInvoices(ListInvoicesRequest) returns (ListInvoicesResponse);
+
+  // Loan operations
+  rpc CreateLoan(CreateLoanRequest) returns (BusinessTransactionResponse);
+  rpc RepayLoan(RepayLoanRequest) returns (BusinessTransactionResponse);
+  rpc GetLoan(GetLoanRequest) returns (Loan);
+  rpc ListLoans(ListLoansRequest) returns (ListLoansResponse);
+  rpc GetOutstandingLoans(GetOutstandingLoansRequest) returns (GetOutstandingLoansResponse);
+  rpc GetTotalDebt(GetTotalDebtRequest) returns (GetTotalDebtResponse);
+
+  // Access payment
+  rpc AccessPayment(AccessPaymentRequest) returns (BusinessTransactionResponse);
+}
+

@@ -11,22 +11,32 @@
 //! and error handling for all gRPC operations.
 
 #[allow(dead_code)]
+pub mod common {
+    tonic::include_proto!("scalegraph.common");
+}
+
+#[allow(dead_code)]
 pub mod ledger {
     tonic::include_proto!("scalegraph.ledger");
 }
 
+#[allow(dead_code)]
+pub mod business {
+    tonic::include_proto!("scalegraph.business");
+}
+
 use anyhow::Result;
+use common::{Account, AccountType, Participant, ParticipantRole, Transaction, TransferEntry};
 use ledger::{
-    business_service_client::BusinessServiceClient, ledger_service_client::LedgerServiceClient,
-    participant_service_client::ParticipantServiceClient, AccessPaymentRequest, Account,
-    BusinessTransactionResponse, CreditRequest, DebitRequest, GetAccountRequest, GetBalanceRequest,
-    GetParticipantAccountsRequest, GetParticipantRequest, ListParticipantsRequest,
-    ListTransactionsRequest, Participant, PayInvoiceRequest, PurchaseInvoiceRequest, Transaction,
-    TransferEntry, TransferRequest,
+    ledger_service_client::LedgerServiceClient, CreditRequest, DebitRequest, GetAccountRequest,
+    GetBalanceRequest, ListTransactionsRequest, TransferRequest,
+};
+use business::{
+    business_service_client::BusinessServiceClient, participant_service_client::ParticipantServiceClient,
+    AccessPaymentRequest, BusinessTransactionResponse, GetParticipantAccountsRequest,
+    GetParticipantRequest, ListParticipantsRequest, PayInvoiceRequest, PurchaseInvoiceRequest,
 };
 use tonic::transport::Channel;
-
-pub use ledger::{AccountType, ParticipantRole};
 
 #[derive(Clone)]
 pub struct ScalegraphClient {

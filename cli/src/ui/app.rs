@@ -23,6 +23,7 @@ pub type AppResult<T> = Result<T>;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
     Participants,
+    ParticipantDetail,
     Accounts,
     Transfer,
     History,
@@ -41,6 +42,7 @@ impl View {
     pub fn title(&self) -> &'static str {
         match self {
             View::Participants => "Participants",
+            View::ParticipantDetail => "Participant Details",
             View::Accounts => "Accounts",
             View::Transfer => "Transfer",
             View::History => "History",
@@ -49,11 +51,33 @@ impl View {
 }
 
 #[derive(Debug, Clone)]
+pub struct ContactInfo {
+    pub email: String,
+    pub phone: String,
+    pub website: String,
+    pub address: String,
+    pub postal_code: String,
+    pub city: String,
+    pub country: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct ParticipantInfo {
     pub id: String,
     pub name: String,
     pub role: String,
     pub services: Vec<String>,
+    pub created_at: Option<i64>,
+    pub metadata: std::collections::HashMap<String, String>,
+    pub about: String,
+    pub contact: ContactInfo,
+}
+
+#[derive(Debug, Clone)]
+pub struct ParticipantDetail {
+    pub info: ParticipantInfo,
+    pub accounts: Vec<AccountInfo>,
+    pub total_balance: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -65,7 +89,7 @@ pub struct AccountInfo {
     pub balance: i64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct TransferForm {
     pub from_account: String,
     pub to_account: String,
@@ -78,20 +102,11 @@ pub struct TransferForm {
     pub show_suggestions: bool,
 }
 
-impl Default for TransferForm {
-    fn default() -> Self {
-        Self {
-            from_account: String::new(),
-            to_account: String::new(),
-            amount: String::new(),
-            reference: String::new(),
-            selected_field: 0,
-            error: None,
-            success: None,
-            suggestion_index: None,
-            show_suggestions: false,
-        }
-    }
+#[derive(Debug, Clone)]
+pub struct BreadcrumbSegment {
+    pub label: String,
+    pub view: View,
+    pub context: Option<String>, // e.g., participant_id when viewing participant's accounts
 }
 
 pub struct App {
@@ -99,9 +114,15 @@ pub struct App {
     pub current_view: View,
     pub running: bool,
 
+    // Breadcrumb navigation
+    pub breadcrumb: Vec<BreadcrumbSegment>,
+
     // Participants view
     pub participants: Vec<ParticipantInfo>,
     pub participant_state: ListState,
+
+    // Participant detail view
+    pub participant_detail: Option<ParticipantDetail>,
 
     // Accounts view
     pub accounts: Vec<AccountInfo>,
@@ -128,12 +149,14 @@ impl App {
         let mut account_state = ListState::default();
         account_state.select(Some(0));
 
-        Self {
+        let mut app = Self {
             client,
             current_view: View::Participants,
             running: true,
+            breadcrumb: Vec::new(),
             participants: Vec::new(),
             participant_state,
+            participant_detail: None,
             accounts: Vec::new(),
             account_state,
             selected_participant: None,
@@ -141,7 +164,9 @@ impl App {
             history: Vec::new(),
             status_message: None,
             loading: false,
-        }
+        };
+        app.update_breadcrumb();
+        app
     }
 
     pub async fn load_participants(&mut self) -> Result<()> {
@@ -149,13 +174,98 @@ impl App {
         let participants = self.client.list_participants(None).await?;
         self.participants = participants
             .into_iter()
-            .map(|p| ParticipantInfo {
-                id: p.id,
-                name: p.name,
-                role: grpc::role_to_string(p.role).to_string(),
-                services: p.services,
+            .map(|p| {
+                let contact = p.contact.as_ref().map(|c| ContactInfo {
+                    email: c.email.clone(),
+                    phone: c.phone.clone(),
+                    website: c.website.clone(),
+                    address: c.address.clone(),
+                    postal_code: c.postal_code.clone(),
+                    city: c.city.clone(),
+                    country: c.country.clone(),
+                }).unwrap_or_else(|| ContactInfo {
+                    email: String::new(),
+                    phone: String::new(),
+                    website: String::new(),
+                    address: String::new(),
+                    postal_code: String::new(),
+                    city: String::new(),
+                    country: String::new(),
+                });
+                
+                ParticipantInfo {
+                    id: p.id,
+                    name: p.name,
+                    role: grpc::role_to_string(p.role).to_string(),
+                    services: p.services,
+                    created_at: if p.created_at > 0 { Some(p.created_at) } else { None },
+                    metadata: p.metadata,
+                    about: p.about,
+                    contact,
+                }
             })
             .collect();
+        self.loading = false;
+        Ok(())
+    }
+
+    pub async fn load_participant_detail(&mut self, participant_id: &str) -> Result<()> {
+        self.loading = true;
+        
+        // Load full participant details
+        let participant = self.client.get_participant(participant_id).await?;
+        
+        // Load accounts for this participant
+        let accounts = self.client.get_participant_accounts(participant_id).await?;
+        
+        let account_infos: Vec<AccountInfo> = accounts
+            .iter()
+            .map(|acc| AccountInfo {
+                id: acc.id.clone(),
+                participant_id: acc.participant_id.clone(),
+                account_type: grpc::account_type_to_string(acc.account_type).to_string(),
+                balance: acc.balance,
+            })
+            .collect();
+        
+        // Calculate total balance
+        let total_balance: i64 = account_infos.iter().map(|a| a.balance).sum();
+        
+        let contact = participant.contact.as_ref().map(|c| ContactInfo {
+            email: c.email.clone(),
+            phone: c.phone.clone(),
+            website: c.website.clone(),
+            address: c.address.clone(),
+            postal_code: c.postal_code.clone(),
+            city: c.city.clone(),
+            country: c.country.clone(),
+        }).unwrap_or_else(|| ContactInfo {
+            email: String::new(),
+            phone: String::new(),
+            website: String::new(),
+            address: String::new(),
+            postal_code: String::new(),
+            city: String::new(),
+            country: String::new(),
+        });
+        
+        let info = ParticipantInfo {
+            id: participant.id,
+            name: participant.name,
+            role: grpc::role_to_string(participant.role).to_string(),
+            services: participant.services,
+            created_at: if participant.created_at > 0 { Some(participant.created_at) } else { None },
+            metadata: participant.metadata,
+            about: participant.about,
+            contact,
+        };
+        
+        self.participant_detail = Some(ParticipantDetail {
+            info,
+            accounts: account_infos,
+            total_balance,
+        });
+        
         self.loading = false;
         Ok(())
     }
@@ -266,6 +376,114 @@ impl App {
         Ok(())
     }
 
+    /// Update breadcrumb based on current view and context.
+    /// 
+    /// Breadcrumbs represent the hierarchical navigation dimension (drilling down into data),
+    /// while Tab/arrows represent the flat navigation dimension (switching between view types).
+    /// 
+    /// Examples:
+    /// - Flat: Participants ↔ Accounts ↔ Transfer ↔ History (Tab/arrows)
+    /// - Hierarchical: Participants → [Participant] → Accounts (breadcrumb/back)
+    pub fn update_breadcrumb(&mut self) {
+        self.breadcrumb.clear();
+
+        match self.current_view {
+            View::Participants => {
+                self.breadcrumb.push(BreadcrumbSegment {
+                    label: "Participants".to_string(),
+                    view: View::Participants,
+                    context: None,
+                });
+            }
+            View::ParticipantDetail => {
+                self.breadcrumb.push(BreadcrumbSegment {
+                    label: "Participants".to_string(),
+                    view: View::Participants,
+                    context: None,
+                });
+                
+                if let Some(ref detail) = self.participant_detail {
+                    self.breadcrumb.push(BreadcrumbSegment {
+                        label: detail.info.name.clone(),
+                        view: View::ParticipantDetail,
+                        context: Some(detail.info.id.clone()),
+                    });
+                }
+            }
+            View::Accounts => {
+                self.breadcrumb.push(BreadcrumbSegment {
+                    label: "Participants".to_string(),
+                    view: View::Participants,
+                    context: None,
+                });
+
+                if let Some(ref participant_id) = self.selected_participant {
+                    // Find participant name
+                    let participant_name = self
+                        .participants
+                        .iter()
+                        .find(|p| p.id == *participant_id)
+                        .map(|p| p.name.clone())
+                        .unwrap_or_else(|| participant_id.clone());
+                    
+                    self.breadcrumb.push(BreadcrumbSegment {
+                        label: participant_name,
+                        view: View::ParticipantDetail,
+                        context: Some(participant_id.clone()),
+                    });
+                }
+
+                self.breadcrumb.push(BreadcrumbSegment {
+                    label: "Accounts".to_string(),
+                    view: View::Accounts,
+                    context: self.selected_participant.clone(),
+                });
+            }
+            View::Transfer => {
+                self.breadcrumb.push(BreadcrumbSegment {
+                    label: "Transfer".to_string(),
+                    view: View::Transfer,
+                    context: None,
+                });
+            }
+            View::History => {
+                self.breadcrumb.push(BreadcrumbSegment {
+                    label: "History".to_string(),
+                    view: View::History,
+                    context: None,
+                });
+            }
+        }
+    }
+
+    /// Navigate to a breadcrumb segment (hierarchical navigation).
+    /// This moves up/down the data hierarchy, not between parallel views.
+    /// Use Tab/arrows for switching between parallel views.
+    pub fn navigate_to_breadcrumb(&mut self, index: usize) {
+        if index < self.breadcrumb.len() {
+            let segment = &self.breadcrumb[index];
+            self.current_view = segment.view;
+            
+            // Restore context if needed
+            if let Some(ref context) = segment.context {
+                if segment.view == View::Accounts {
+                    self.selected_participant = Some(context.clone());
+                } else if segment.view == View::ParticipantDetail {
+                    self.selected_participant = Some(context.clone());
+                }
+            } else if segment.view == View::Accounts {
+                self.selected_participant = None;
+            }
+            
+            // Truncate breadcrumb to selected segment
+            self.breadcrumb.truncate(index + 1);
+            self.update_breadcrumb();
+        }
+    }
+
+    /// Navigate to next view in the flat navigation dimension.
+    /// This switches between parallel views (Participants, Accounts, Transfer, History),
+    /// not hierarchical drill-down. Use breadcrumb/back for hierarchical navigation.
     pub fn next_view(&mut self) {
         let views = View::all();
         let idx = views
@@ -273,8 +491,15 @@ impl App {
             .position(|v| *v == self.current_view)
             .unwrap_or(0);
         self.current_view = views[(idx + 1) % views.len()];
+        // Clear participant selection when leaving Accounts view
+        if self.current_view != View::Accounts {
+            self.selected_participant = None;
+        }
+        self.update_breadcrumb();
     }
 
+    /// Navigate to previous view in the flat navigation dimension.
+    /// This switches between parallel views, not hierarchical drill-down.
     pub fn prev_view(&mut self) {
         let views = View::all();
         let idx = views
@@ -282,12 +507,24 @@ impl App {
             .position(|v| *v == self.current_view)
             .unwrap_or(0);
         self.current_view = views[(idx + views.len() - 1) % views.len()];
+        // Clear participant selection when leaving Accounts view
+        if self.current_view != View::Accounts {
+            self.selected_participant = None;
+        }
+        self.update_breadcrumb();
     }
 
+    /// Jump directly to a view by index in the flat navigation dimension.
+    /// This switches between parallel views, not hierarchical drill-down.
     pub fn goto_view(&mut self, index: usize) {
         let views = View::all();
         if index < views.len() {
             self.current_view = views[index];
+            // Clear participant selection when switching to non-Accounts view
+            if self.current_view != View::Accounts {
+                self.selected_participant = None;
+            }
+            self.update_breadcrumb();
         }
     }
 
@@ -608,10 +845,18 @@ pub async fn run_app(
                                     let participant_id =
                                         app.participants.get(idx).map(|p| p.id.clone());
                                     if let Some(pid) = participant_id {
-                                        app.selected_participant = Some(pid.clone());
-                                        let _ = app.load_accounts(Some(&pid)).await;
-                                        app.current_view = View::Accounts;
+                                        let _ = app.load_participant_detail(&pid).await;
+                                        app.current_view = View::ParticipantDetail;
+                                        app.update_breadcrumb();
                                     }
+                                }
+                            } else if app.current_view == View::ParticipantDetail {
+                                // Enter on detail view - navigate to accounts
+                                if let Some(ref detail) = app.participant_detail {
+                                    app.selected_participant = Some(detail.info.id.clone());
+                                    app.accounts = detail.accounts.clone();
+                                    app.current_view = View::Accounts;
+                                    app.update_breadcrumb();
                                 }
                             }
                         }
@@ -625,6 +870,31 @@ pub async fn run_app(
                         KeyCode::Char('a') if app.current_view == View::Accounts => {
                             app.selected_participant = None;
                             let _ = app.load_accounts(None).await;
+                            app.update_breadcrumb();
+                        }
+                        // Back navigation - move up the hierarchical dimension (breadcrumb)
+                        // This is different from Tab/arrows which move in the flat dimension
+                        KeyCode::Char('b') if app.breadcrumb.len() > 1 => {
+                            // Navigate back to previous segment
+                            let target_index = app.breadcrumb.len() - 2;
+                            app.navigate_to_breadcrumb(target_index);
+                            
+                            // Reload data based on new view
+                            let participant_id = app.selected_participant.clone();
+                            if app.current_view == View::Accounts {
+                                if let Some(pid) = participant_id {
+                                    let _ = app.load_accounts(Some(&pid)).await;
+                                } else {
+                                    let _ = app.load_accounts(None).await;
+                                }
+                            } else if app.current_view == View::ParticipantDetail {
+                                // Reload participant detail if we're going back to it
+                                if let Some(ref pid) = participant_id {
+                                    let _ = app.load_participant_detail(pid).await;
+                                }
+                            } else if app.current_view == View::Participants {
+                                let _ = app.load_participants().await;
+                            }
                         }
                         // Text input for Transfer form
                         KeyCode::Char(c) => {

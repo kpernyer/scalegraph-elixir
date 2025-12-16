@@ -7,6 +7,11 @@
 #   - ecosystem_partner
 #   - supplier
 #   - equipment_provider
+#   - ecosystem orchestrator
+#
+# Services:
+#   - List of service identifiers that each participant provides
+#   - Examples: access_control, payment_processing, platform, supply, etc.
 #
 # Account types:
 #   - operating      (day-to-day operations)
@@ -15,11 +20,22 @@
 #   - escrow         (held funds)
 #   - fees           (fee collection)
 #   - usage          (pay-per-use tracking)
+#   - standalone     (independent account, optional)
 
 participants:
   - id: assa_abloy
     name: ASSA ABLOY
     role: access_provider
+    services:
+      - access_control
+      - access_management
+      - digital_door
+    about: Global leader in access solutions, providing secure access control systems for businesses worldwide.
+    contact:
+      email: contact@assaabloy.com
+      phone: +46 8 630 00 00
+      website: https://www.assaabloy.com
+      country: SE
     metadata:
       country: SE
       industry: Access Control
@@ -28,13 +44,27 @@ participants:
       - type: operating
         initial_balance: 10000
       - type: receivables
-        initial_balance: 020000
+        initial_balance: 2000000  # 20,000.00
       - type: fees
         initial_balance: 0
 
   - id: seb
     name: SEB
     role: banking_partner
+    services:
+      - payment_processing
+      - escrow
+      - fees
+      - usage
+      - receivables
+      - payables
+      - operating
+    about: Nordic banking and financial services provider, offering payment processing and banking solutions.
+    contact:
+      email: business@seb.se
+      phone: +46 8 763 50 00
+      website: https://www.seb.se
+      country: SE
     metadata:
       country: SE
       industry: Banking
@@ -45,11 +75,32 @@ participants:
       - type: escrow
         initial_balance: 0
       - type: fees
-        initial_balance: 034
+        initial_balance: 3400  # 34.00
 
   - id: beauty_hosting
     name: Beauty Hosting
-    role: ecosystem_partner
+    role: ecosystem_orchestrator
+    services:
+      - platform
+      - ecosystem_orchestration
+      - matchmaking
+      - payment_processing
+      - booking_system
+      - inventory_management
+      - customer_relationship_management
+      - employee_management
+      - marketing
+      - analytics
+      - reporting
+      - compliance
+      - security
+    about: Ecosystem partner providing platform services for beauty salon chains, managing operations and payments.
+    contact:
+      email: info@beautyhosting.se
+      phone: +46 8 123 45 67
+      website: https://www.beautyhosting.se
+      city: Stockholm
+      country: SE
     metadata:
       country: SE
       industry: Platform
@@ -67,6 +118,15 @@ participants:
   - id: schampo_etc
     name: Schampo etc
     role: supplier
+    services:
+      - product_delivery
+      - automatic_refill
+      - supply
+    about: Supplier of high-quality hair and beauty products for professional salons.
+    contact:
+      email: orders@schampoetc.se
+      phone: +46 8 234 56 78
+      country: SE
     metadata:
       country: SE
       industry: Beauty Products
@@ -80,6 +140,15 @@ participants:
   - id: clipper_oy
     name: Clipper Oy
     role: supplier
+    services:
+      - product_delivery
+      - supply
+      - repairs_and_maintenance
+    about: Finnish supplier of professional equipment and tools for hair dressers and salons.
+    contact:
+      email: sales@clipper.fi
+      phone: +358 9 345 67 89
+      country: FI
     metadata:
       country: FI
       industry: Equipment
@@ -90,9 +159,50 @@ participants:
       - type: receivables
         initial_balance: 0
 
+  - id: essity
+    name: Essity
+    role: supplier
+    services:
+      - product_delivery
+      - supply
+      - pay_per_use
+      - consumable_tracking
+      - automatic_refill
+    about: Leading global hygiene and health company providing paper towels, soap, shampoo, and hygiene products to salons on an as-a-service model. Salons only pay for what they consume (ml of soap per month, meters of paper, etc.).
+    contact:
+      email: business.solutions@essity.com
+      phone: +46 8 788 51 00
+      website: https://www.essity.com
+      city: Stockholm
+      country: SE
+    metadata:
+      country: SE
+      industry: Hygiene Products
+      description: Supplier of hygiene products with pay-per-consumption model
+      pricing_model: pay_per_use
+      products: paper_towels, soap, shampoo, hygiene_products
+      unit_tracking: ml, meters, pieces
+    accounts:
+      - type: operating
+        initial_balance: 2000000  # 20,000.00 - working capital
+      - type: receivables
+        initial_balance: 0
+      - type: usage
+        initial_balance: 0  # Track consumption-based billing
+
   - id: hairgrowers_united
     name: Hairgrowers United Inc
     role: equipment_provider
+    services:
+      - equipment_rental
+      - equipment_sales
+      - pay_per_use
+    about: Provider of premium hair growth equipment with pay-per-use pricing model for salons.
+    contact:
+      email: support@hairgrowers.com
+      phone: +1 555 123 4567
+      website: https://www.hairgrowers.com
+      country: US
     metadata:
       country: US
       industry: Equipment
@@ -106,10 +216,17 @@ participants:
       - type: usage
         initial_balance: 0
 
-# Example salons (you can add more)
   - id: salon_glamour
     name: Salon Glamour
     role: ecosystem_partner
+    services:
+      - salon_services
+    about: Premium hair salon located in central Stockholm, offering high-end hair styling and beauty services.
+    contact:
+      email: booking@salonglamour.se
+      phone: +46 8 111 22 33
+      city: Stockholm
+      country: SE
     metadata:
       country: SE
       city: Stockholm
@@ -124,6 +241,15 @@ participants:
   - id: klipp_och_trim
     name: Klipp & Trim
     role: ecosystem_partner
+    services:
+      - salon_services
+      - equipment_rental
+    about: Family-friendly hair salon chain in Gothenburg, providing quality haircuts and styling for all ages.
+    contact:
+      email: info@klippochtrim.se
+      phone: +46 31 444 55 66
+      city: Gothenburg
+      country: SE
     metadata:
       country: SE
       city: Gothenburg

@@ -6,7 +6,7 @@ defmodule Scalegraph.Ledger.Core do
   `Scalegraph.Participant.Core.create_participant_account/4`.
   """
 
-  alias Scalegraph.Storage.Schema
+  alias Scalegraph.Ledger.Storage
 
   @doc """
   Create a standalone account (not linked to a participant).
@@ -21,11 +21,11 @@ defmodule Scalegraph.Ledger.Core do
 
     result =
       :mnesia.transaction(fn ->
-        case :mnesia.read(Schema.accounts_table(), account_id) do
+        case :mnesia.read(Storage.accounts_table(), account_id) do
           [] ->
             # Standalone accounts have nil participant_id and :standalone type
             record =
-              {Schema.accounts_table(), account_id, nil, :standalone, initial_balance, created_at,
+              {Storage.accounts_table(), account_id, nil, :standalone, initial_balance, created_at,
                metadata}
 
             :mnesia.write(record)
@@ -58,7 +58,7 @@ defmodule Scalegraph.Ledger.Core do
   def get_account(account_id) when is_binary(account_id) do
     result =
       :mnesia.transaction(fn ->
-        case :mnesia.read(Schema.accounts_table(), account_id) do
+        case :mnesia.read(Storage.accounts_table(), account_id) do
           [{_table, id, participant_id, account_type, balance, created_at, metadata}] ->
             {:ok,
              %{
@@ -93,18 +93,24 @@ defmodule Scalegraph.Ledger.Core do
 
   @doc """
   Credit an account (add funds).
+
+  Note: This is a convenience function that creates a single-entry transfer.
+  The type field is informational only - all transactions are generic transfers.
   """
   def credit(account_id, amount, reference \\ "")
       when is_binary(account_id) and is_integer(amount) and amount > 0 do
-    execute_single_entry_transaction(account_id, amount, "credit", reference)
+    execute_single_entry_transaction(account_id, amount, "transfer", reference)
   end
 
   @doc """
   Debit an account (subtract funds).
+
+  Note: This is a convenience function that creates a single-entry transfer.
+  The type field is informational only - all transactions are generic transfers.
   """
   def debit(account_id, amount, reference \\ "")
       when is_binary(account_id) and is_integer(amount) and amount > 0 do
-    execute_single_entry_transaction(account_id, -amount, "debit", reference)
+    execute_single_entry_transaction(account_id, -amount, "transfer", reference)
   end
 
   @doc """
@@ -116,6 +122,9 @@ defmodule Scalegraph.Ledger.Core do
 
   For a valid transfer, the sum of all amounts should typically be zero,
   but this is not enforced to allow for fees, etc.
+
+  All transactions are generic transfers - business semantics (invoice, loan, etc.)
+  are stored in the Business/Contract layer, not in the ledger.
   """
   def transfer(entries, reference \\ "") when is_list(entries) do
     tx_id = generate_tx_id()
@@ -123,50 +132,17 @@ defmodule Scalegraph.Ledger.Core do
 
     result =
       :mnesia.transaction(fn ->
-        # Validate all accounts exist and have sufficient balance
+        # Validate and update all accounts
         Enum.each(entries, fn {account_id, amount} ->
-          case :mnesia.read(Schema.accounts_table(), account_id) do
-            [{_table, ^account_id, participant_id, account_type, balance, created_at, metadata}] ->
-              new_balance = balance + amount
-
-              # Allow negative balances for receivables and payables (they track obligations)
-              # Prevent negative balances for other account types (operating, escrow, fees, usage, standalone)
-              case account_type do
-                :receivables ->
-                  # Receivables can go negative (e.g., if you owe someone)
-                  :ok
-
-                :payables ->
-                  # Payables can go negative (e.g., when you owe money)
-                  :ok
-
-                _ ->
-                  # All other account types must maintain non-negative balance
-                  if new_balance < 0 do
-                    :mnesia.abort({:insufficient_funds, account_id, balance, amount})
-                  end
-              end
-
-              # Update account balance
-              record =
-                {Schema.accounts_table(), account_id, participant_id, account_type, new_balance,
-                 created_at, metadata}
-
-              :mnesia.write(record)
-
-            [] ->
-              :mnesia.abort({:account_not_found, account_id})
-          end
+          process_transfer_entry(account_id, amount)
         end)
 
         # Record the transaction
-        tx_entries =
-          Enum.map(entries, fn {account_id, amount} ->
-            %{account_id: account_id, amount: amount}
-          end)
+        tx_entries = build_transaction_entries(entries)
 
+        # Type is informational only - all transactions are generic transfers
         tx_record =
-          {Schema.transactions_table(), tx_id, "transfer", tx_entries, timestamp, reference}
+          {Storage.transactions_table(), tx_id, "transfer", tx_entries, timestamp, reference}
 
         :mnesia.write(tx_record)
 
@@ -195,6 +171,52 @@ defmodule Scalegraph.Ledger.Core do
     end
   end
 
+  # Private transfer helpers
+
+  defp process_transfer_entry(account_id, amount) do
+    case :mnesia.read(Storage.accounts_table(), account_id) do
+      [{_table, ^account_id, participant_id, account_type, balance, created_at, metadata}] ->
+        new_balance = balance + amount
+
+        # Validate balance based on account type
+        validate_balance_for_account_type(account_type, new_balance, account_id, balance, amount)
+
+        # Update account balance
+        record =
+          {Storage.accounts_table(), account_id, participant_id, account_type, new_balance,
+           created_at, metadata}
+
+        :mnesia.write(record)
+
+      [] ->
+        :mnesia.abort({:account_not_found, account_id})
+    end
+  end
+
+  defp validate_balance_for_account_type(account_type, new_balance, account_id, balance, amount) do
+    case account_type do
+      :receivables ->
+        # Receivables can go negative (e.g., if you owe someone)
+        :ok
+
+      :payables ->
+        # Payables can go negative (e.g., when you owe money)
+        :ok
+
+      _ ->
+        # All other account types must maintain non-negative balance
+        if new_balance < 0 do
+          :mnesia.abort({:insufficient_funds, account_id, balance, amount})
+        end
+    end
+  end
+
+  defp build_transaction_entries(entries) do
+    Enum.map(entries, fn {account_id, amount} ->
+      %{account_id: account_id, amount: amount}
+    end)
+  end
+
   # Private functions
 
   defp execute_single_entry_transaction(account_id, amount, type, reference) do
@@ -203,38 +225,23 @@ defmodule Scalegraph.Ledger.Core do
 
     result =
       :mnesia.transaction(fn ->
-        case :mnesia.read(Schema.accounts_table(), account_id) do
+        case :mnesia.read(Storage.accounts_table(), account_id) do
           [{_table, ^account_id, participant_id, account_type, balance, created_at, metadata}] ->
             new_balance = balance + amount
 
-            # Allow negative balances for receivables and payables (they track obligations)
-            # Prevent negative balances for other account types (operating, escrow, fees, usage, standalone)
-            case account_type do
-              :receivables ->
-                # Receivables can go negative (e.g., if you owe someone)
-                :ok
-
-              :payables ->
-                # Payables can go negative (e.g., when you owe money)
-                :ok
-
-              _ ->
-                # All other account types must maintain non-negative balance
-                if new_balance < 0 do
-                  :mnesia.abort({:insufficient_funds, balance, amount})
-                end
-            end
+            # Validate balance based on account type
+            validate_balance_for_single_entry(account_type, new_balance, balance, amount)
 
             # Update account
             account_record =
-              {Schema.accounts_table(), account_id, participant_id, account_type, new_balance,
+              {Storage.accounts_table(), account_id, participant_id, account_type, new_balance,
                created_at, metadata}
 
             :mnesia.write(account_record)
 
             # Record transaction
             entries = [%{account_id: account_id, amount: amount}]
-            tx_record = {Schema.transactions_table(), tx_id, type, entries, timestamp, reference}
+            tx_record = {Storage.transactions_table(), tx_id, type, entries, timestamp, reference}
             :mnesia.write(tx_record)
 
             {:ok,
@@ -266,6 +273,24 @@ defmodule Scalegraph.Ledger.Core do
     end
   end
 
+  defp validate_balance_for_single_entry(account_type, new_balance, balance, amount) do
+    case account_type do
+      :receivables ->
+        # Receivables can go negative (e.g., if you owe someone)
+        :ok
+
+      :payables ->
+        # Payables can go negative (e.g., when you owe money)
+        :ok
+
+      _ ->
+        # All other account types must maintain non-negative balance
+        if new_balance < 0 do
+          :mnesia.abort({:insufficient_funds, balance, amount})
+        end
+    end
+  end
+
   @doc """
   List recent transactions, optionally filtered by account.
 
@@ -281,46 +306,55 @@ defmodule Scalegraph.Ledger.Core do
 
     result =
       :mnesia.transaction(fn ->
-        # Get all transactions
-        all_txs =
-          :mnesia.foldl(
-            fn {_table, id, type, entries, timestamp, reference}, acc ->
-              tx = %{
-                id: id,
-                type: type,
-                entries: entries,
-                timestamp: timestamp,
-                reference: reference
-              }
-
-              [tx | acc]
-            end,
-            [],
-            Schema.transactions_table()
-          )
-
-        # Filter by account if specified
-        filtered =
-          if account_filter do
-            Enum.filter(all_txs, fn tx ->
-              Enum.any?(tx.entries, fn entry ->
-                entry.account_id == account_filter
-              end)
-            end)
-          else
-            all_txs
-          end
-
-        # Sort by timestamp descending and limit
-        filtered
-        |> Enum.sort_by(& &1.timestamp, :desc)
-        |> Enum.take(limit)
+        all_txs = fetch_all_transactions()
+        filtered = apply_account_filter(all_txs, account_filter)
+        sort_and_limit_transactions(filtered, limit)
       end)
 
     case result do
       {:atomic, transactions} -> {:ok, transactions}
       {:aborted, reason} -> {:error, reason}
     end
+  end
+
+  # Private transaction listing helpers
+
+  defp fetch_all_transactions do
+    :mnesia.foldl(
+      fn {_table, id, type, entries, timestamp, reference}, acc ->
+        tx = %{
+          id: id,
+          type: type,
+          entries: entries,
+          timestamp: timestamp,
+          reference: reference
+        }
+
+        [tx | acc]
+      end,
+      [],
+      Storage.transactions_table()
+    )
+  end
+
+  defp apply_account_filter(all_txs, nil), do: all_txs
+
+  defp apply_account_filter(all_txs, account_filter) do
+    Enum.filter(all_txs, fn tx ->
+      transaction_involves_account?(tx, account_filter)
+    end)
+  end
+
+  defp transaction_involves_account?(tx, account_filter) do
+    Enum.any?(tx.entries, fn entry ->
+      entry.account_id == account_filter
+    end)
+  end
+
+  defp sort_and_limit_transactions(transactions, limit) do
+    transactions
+    |> Enum.sort_by(& &1.timestamp, :desc)
+    |> Enum.take(limit)
   end
 
   defp generate_tx_id do

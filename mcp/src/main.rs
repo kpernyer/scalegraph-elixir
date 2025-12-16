@@ -20,20 +20,46 @@
 //!
 //! Configure in Claude Desktop's settings as a stdio MCP server.
 
+#[allow(dead_code)]
+pub mod common {
+    tonic::include_proto!("scalegraph.common");
+}
+
+#[allow(dead_code)]
 pub mod ledger {
     tonic::include_proto!("scalegraph.ledger");
 }
 
+#[allow(dead_code)]
+pub mod business {
+    tonic::include_proto!("scalegraph.business");
+}
+
+#[allow(dead_code)]
+pub mod smartcontracts {
+    tonic::include_proto!("scalegraph.smartcontracts");
+}
+
 use anyhow::Result;
+use common::TransferEntry;
 use ledger::{
-    business_service_client::BusinessServiceClient,
-    ledger_service_client::LedgerServiceClient,
-    participant_service_client::ParticipantServiceClient,
+    ledger_service_client::LedgerServiceClient, GetBalanceRequest, ListTransactionsRequest,
+    TransferRequest,
+};
+use business::{
+    business_service_client::BusinessServiceClient, participant_service_client::ParticipantServiceClient,
     AccessPaymentRequest, CreateLoanRequest, CreateParticipantAccountRequest,
-    CreateParticipantRequest, GetBalanceRequest, GetOutstandingLoansRequest,
-    GetParticipantAccountsRequest, GetTotalDebtRequest, ListParticipantsRequest,
-    ListTransactionsRequest, PayInvoiceRequest, PurchaseInvoiceRequest, RepayLoanRequest,
-    TransferEntry, TransferRequest,
+    CreateParticipantRequest, GetOutstandingLoansRequest, GetParticipantAccountsRequest,
+    GetTotalDebtRequest, ListParticipantsRequest, PayInvoiceRequest, PurchaseInvoiceRequest,
+    RepayLoanRequest,
+};
+use smartcontracts::{
+    smart_contract_service_client::SmartContractServiceClient,
+    ContractType, ContractStatus,
+    CreateInvoiceContractRequest, CreateSubscriptionContractRequest,
+    CreateConditionalPaymentRequest, CreateRevenueShareContractRequest,
+    GetContractRequest, ListContractsRequest, ExecuteContractRequest,
+    UpdateContractStatusRequest, RevenueShareParty,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -77,6 +103,7 @@ struct ScalegraphClient {
     ledger: LedgerServiceClient<Channel>,
     participant: ParticipantServiceClient<Channel>,
     business: BusinessServiceClient<Channel>,
+    contracts: SmartContractServiceClient<Channel>,
 }
 
 impl ScalegraphClient {
@@ -86,7 +113,8 @@ impl ScalegraphClient {
         Ok(Self {
             ledger: LedgerServiceClient::new(channel.clone()),
             participant: ParticipantServiceClient::new(channel.clone()),
-            business: BusinessServiceClient::new(channel),
+            business: BusinessServiceClient::new(channel.clone()),
+            contracts: SmartContractServiceClient::new(channel),
         })
     }
 
@@ -119,6 +147,8 @@ impl ScalegraphClient {
             name: name.to_string(),
             role,
             metadata: std::collections::HashMap::new(),
+            about: String::new(),
+            contact: None,
         };
         let response = self.participant.create_participant(request).await?;
         let p = response.into_inner();
@@ -335,7 +365,9 @@ impl ScalegraphClient {
         let request = CreateLoanRequest {
             lender_id: lender_id.to_string(),
             borrower_id: borrower_id.to_string(),
-            amount,
+            principal_cents: amount,
+            annual_interest_rate: 0.05, // Default 5% annual interest
+            term_months: 60, // Default 60 months (5 years)
             reference: reference.to_string(),
         };
         let response = self.business.create_loan(request).await?;
@@ -399,6 +431,387 @@ impl ScalegraphClient {
             "total_debt": format_balance(result.total_debt),
             "total_debt_cents": result.total_debt,
         }))
+    }
+
+    // Smart Contract operations
+
+    async fn create_invoice_contract(
+        &mut self,
+        supplier_id: &str,
+        buyer_id: &str,
+        amount_cents: i64,
+        issue_date: i64,
+        due_date: i64,
+        payment_terms: &str,
+        auto_debit: bool,
+        late_fee_cents: i64,
+        reference: &str,
+    ) -> Result<Value> {
+        let request = CreateInvoiceContractRequest {
+            supplier_id: supplier_id.to_string(),
+            buyer_id: buyer_id.to_string(),
+            amount_cents,
+            issue_date,
+            due_date,
+            payment_terms: payment_terms.to_string(),
+            auto_debit,
+            late_fee_cents,
+            reference: reference.to_string(),
+            metadata: std::collections::HashMap::new(),
+        };
+        let response = self.contracts.create_invoice_contract(request).await?;
+        let contract = response.into_inner();
+        Ok(json!({
+            "id": contract.id,
+            "supplier_id": contract.supplier_id,
+            "buyer_id": contract.buyer_id,
+            "amount_cents": contract.amount_cents,
+            "amount": format_balance(contract.amount_cents),
+            "issue_date": contract.issue_date,
+            "due_date": contract.due_date,
+            "payment_terms": contract.payment_terms,
+            "auto_debit": contract.auto_debit,
+            "late_fee_cents": contract.late_fee_cents,
+            "status": contract.status,
+            "reference": contract.reference,
+        }))
+    }
+
+    async fn get_invoice_contract(&mut self, contract_id: &str) -> Result<Value> {
+        let request = GetContractRequest {
+            contract_id: contract_id.to_string(),
+            contract_type: ContractType::Invoice as i32,
+        };
+        let response = self.contracts.get_invoice_contract(request).await?;
+        let contract = response.into_inner();
+        Ok(json!({
+            "id": contract.id,
+            "supplier_id": contract.supplier_id,
+            "buyer_id": contract.buyer_id,
+            "amount_cents": contract.amount_cents,
+            "amount": format_balance(contract.amount_cents),
+            "issue_date": contract.issue_date,
+            "due_date": contract.due_date,
+            "payment_terms": contract.payment_terms,
+            "auto_debit": contract.auto_debit,
+            "late_fee_cents": contract.late_fee_cents,
+            "status": contract.status,
+            "reference": contract.reference,
+            "created_at": contract.created_at,
+            "paid_at": contract.paid_at,
+        }))
+    }
+
+    async fn create_subscription_contract(
+        &mut self,
+        provider_id: &str,
+        subscriber_id: &str,
+        monthly_fee_cents: i64,
+        billing_date: &str,
+        auto_debit: bool,
+        cancellation_notice_days: i32,
+        start_date: i64,
+        end_date: Option<i64>,
+    ) -> Result<Value> {
+        let request = CreateSubscriptionContractRequest {
+            provider_id: provider_id.to_string(),
+            subscriber_id: subscriber_id.to_string(),
+            monthly_fee_cents,
+            billing_date: billing_date.to_string(),
+            auto_debit,
+            cancellation_notice_days,
+            start_date,
+            end_date: end_date.unwrap_or(0),
+            metadata: std::collections::HashMap::new(),
+        };
+        let response = self.contracts.create_subscription_contract(request).await?;
+        let contract = response.into_inner();
+        Ok(json!({
+            "id": contract.id,
+            "provider_id": contract.provider_id,
+            "subscriber_id": contract.subscriber_id,
+            "monthly_fee_cents": contract.monthly_fee_cents,
+            "monthly_fee": format_balance(contract.monthly_fee_cents),
+            "billing_date": contract.billing_date,
+            "auto_debit": contract.auto_debit,
+            "cancellation_notice_days": contract.cancellation_notice_days,
+            "start_date": contract.start_date,
+            "end_date": contract.end_date,
+            "status": contract.status,
+            "next_billing_date": contract.next_billing_date,
+        }))
+    }
+
+    async fn get_subscription_contract(&mut self, contract_id: &str) -> Result<Value> {
+        let request = GetContractRequest {
+            contract_id: contract_id.to_string(),
+            contract_type: ContractType::Subscription as i32,
+        };
+        let response = self.contracts.get_subscription_contract(request).await?;
+        let contract = response.into_inner();
+        Ok(json!({
+            "id": contract.id,
+            "provider_id": contract.provider_id,
+            "subscriber_id": contract.subscriber_id,
+            "monthly_fee_cents": contract.monthly_fee_cents,
+            "monthly_fee": format_balance(contract.monthly_fee_cents),
+            "billing_date": contract.billing_date,
+            "auto_debit": contract.auto_debit,
+            "cancellation_notice_days": contract.cancellation_notice_days,
+            "start_date": contract.start_date,
+            "end_date": contract.end_date,
+            "status": contract.status,
+            "next_billing_date": contract.next_billing_date,
+        }))
+    }
+
+    async fn create_conditional_payment(
+        &mut self,
+        payer_id: &str,
+        receiver_id: &str,
+        amount_cents: i64,
+        condition_type: &str,
+        trigger: &str,
+    ) -> Result<Value> {
+        let request = CreateConditionalPaymentRequest {
+            payer_id: payer_id.to_string(),
+            receiver_id: receiver_id.to_string(),
+            amount_cents,
+            condition_type: condition_type.to_string(),
+            trigger: trigger.to_string(),
+            condition_parameters: std::collections::HashMap::new(),
+            metadata: std::collections::HashMap::new(),
+        };
+        let response = self.contracts.create_conditional_payment(request).await?;
+        let contract = response.into_inner();
+        Ok(json!({
+            "id": contract.id,
+            "payer_id": contract.payer_id,
+            "receiver_id": contract.receiver_id,
+            "amount_cents": contract.amount_cents,
+            "amount": format_balance(contract.amount_cents),
+            "condition_type": contract.condition_type,
+            "trigger": contract.trigger,
+            "status": contract.status,
+            "created_at": contract.created_at,
+        }))
+    }
+
+    async fn get_conditional_payment(&mut self, contract_id: &str) -> Result<Value> {
+        let request = GetContractRequest {
+            contract_id: contract_id.to_string(),
+            contract_type: ContractType::ConditionalPayment as i32,
+        };
+        let response = self.contracts.get_conditional_payment(request).await?;
+        let contract = response.into_inner();
+        Ok(json!({
+            "id": contract.id,
+            "payer_id": contract.payer_id,
+            "receiver_id": contract.receiver_id,
+            "amount_cents": contract.amount_cents,
+            "amount": format_balance(contract.amount_cents),
+            "condition_type": contract.condition_type,
+            "trigger": contract.trigger,
+            "status": contract.status,
+            "created_at": contract.created_at,
+            "executed_at": contract.executed_at,
+        }))
+    }
+
+    async fn create_revenue_share_contract(
+        &mut self,
+        transaction_type: &str,
+        parties: Vec<(String, f64)>,
+        auto_split: bool,
+    ) -> Result<Value> {
+        let revenue_parties: Vec<RevenueShareParty> = parties
+            .into_iter()
+            .map(|(participant_id, share)| RevenueShareParty {
+                participant_id,
+                share,
+            })
+            .collect();
+        let request = CreateRevenueShareContractRequest {
+            transaction_type: transaction_type.to_string(),
+            parties: revenue_parties,
+            auto_split,
+            metadata: std::collections::HashMap::new(),
+        };
+        let response = self.contracts.create_revenue_share_contract(request).await?;
+        let contract = response.into_inner();
+        let parties_json: Vec<Value> = contract
+            .parties
+            .iter()
+            .map(|p| {
+                json!({
+                    "participant_id": p.participant_id,
+                    "share": p.share,
+                    "share_percent": (p.share * 100.0) as i32,
+                })
+            })
+            .collect();
+        Ok(json!({
+            "id": contract.id,
+            "transaction_type": contract.transaction_type,
+            "parties": parties_json,
+            "auto_split": contract.auto_split,
+            "status": contract.status,
+            "created_at": contract.created_at,
+        }))
+    }
+
+    async fn get_revenue_share_contract(&mut self, contract_id: &str) -> Result<Value> {
+        let request = GetContractRequest {
+            contract_id: contract_id.to_string(),
+            contract_type: ContractType::RevenueShare as i32,
+        };
+        let response = self.contracts.get_revenue_share_contract(request).await?;
+        let contract = response.into_inner();
+        let parties_json: Vec<Value> = contract
+            .parties
+            .iter()
+            .map(|p| {
+                json!({
+                    "participant_id": p.participant_id,
+                    "share": p.share,
+                    "share_percent": (p.share * 100.0) as i32,
+                })
+            })
+            .collect();
+        Ok(json!({
+            "id": contract.id,
+            "transaction_type": contract.transaction_type,
+            "parties": parties_json,
+            "auto_split": contract.auto_split,
+            "status": contract.status,
+            "created_at": contract.created_at,
+            "last_distributed_at": contract.last_distributed_at,
+        }))
+    }
+
+    async fn list_contracts(
+        &mut self,
+        contract_type: Option<i32>,
+        status: Option<&str>,
+        participant_id: Option<&str>,
+        limit: Option<i32>,
+    ) -> Result<Value> {
+        let request = ListContractsRequest {
+            contract_type: contract_type.unwrap_or(0),
+            status: status.unwrap_or("").to_string(),
+            participant_id: participant_id.unwrap_or("").to_string(),
+            limit: limit.unwrap_or(100),
+        };
+        let response = self.contracts.list_contracts(request).await?;
+        let contracts = response.into_inner().contracts;
+        use smartcontracts::contract_response::Contract;
+        let contracts_json: Vec<Value> = contracts
+            .iter()
+            .filter_map(|c| {
+                match c.contract.as_ref() {
+                    Some(Contract::Invoice(inv)) => Some(json!({
+                        "type": "invoice",
+                        "contract": {
+                            "id": inv.id,
+                            "supplier_id": inv.supplier_id,
+                            "buyer_id": inv.buyer_id,
+                            "amount_cents": inv.amount_cents,
+                            "status": inv.status,
+                            "reference": inv.reference,
+                        }
+                    })),
+                    Some(Contract::Subscription(sub)) => Some(json!({
+                        "type": "subscription",
+                        "contract": {
+                            "id": sub.id,
+                            "provider_id": sub.provider_id,
+                            "subscriber_id": sub.subscriber_id,
+                            "monthly_fee_cents": sub.monthly_fee_cents,
+                            "status": sub.status,
+                        }
+                    })),
+                    Some(Contract::ConditionalPayment(cp)) => Some(json!({
+                        "type": "conditional_payment",
+                        "contract": {
+                            "id": cp.id,
+                            "payer_id": cp.payer_id,
+                            "receiver_id": cp.receiver_id,
+                            "amount_cents": cp.amount_cents,
+                            "status": cp.status,
+                        }
+                    })),
+                    Some(Contract::RevenueShare(rs)) => Some(json!({
+                        "type": "revenue_share",
+                        "contract": {
+                            "id": rs.id,
+                            "transaction_type": rs.transaction_type,
+                            "status": rs.status,
+                        }
+                    })),
+                    None => None,
+                }
+            })
+            .collect();
+        Ok(json!({ "contracts": contracts_json }))
+    }
+
+    async fn execute_contract(
+        &mut self,
+        contract_id: &str,
+        contract_type: i32,
+    ) -> Result<Value> {
+        let request = ExecuteContractRequest {
+            contract_id: contract_id.to_string(),
+            contract_type,
+        };
+        let response = self.contracts.execute_contract(request).await?;
+        let result = response.into_inner();
+        Ok(json!({
+            "contract_id": result.contract_id,
+            "executed": result.executed,
+            "message": result.message,
+            "transaction_ids": result.transaction_ids,
+        }))
+    }
+
+    async fn update_contract_status(
+        &mut self,
+        contract_id: &str,
+        contract_type: i32,
+        status: i32,
+    ) -> Result<Value> {
+        let request = UpdateContractStatusRequest {
+            contract_id: contract_id.to_string(),
+            contract_type,
+            status,
+        };
+        let response = self.contracts.update_contract_status(request).await?;
+        let contract_response = response.into_inner();
+        use smartcontracts::contract_response::Contract;
+        let contract_json = match contract_response.contract.as_ref() {
+            Some(Contract::Invoice(inv)) => json!({
+                "type": "invoice",
+                "id": inv.id,
+                "status": inv.status,
+            }),
+            Some(Contract::Subscription(sub)) => json!({
+                "type": "subscription",
+                "id": sub.id,
+                "status": sub.status,
+            }),
+            Some(Contract::ConditionalPayment(cp)) => json!({
+                "type": "conditional_payment",
+                "id": cp.id,
+                "status": cp.status,
+            }),
+            Some(Contract::RevenueShare(rs)) => json!({
+                "type": "revenue_share",
+                "id": rs.id,
+                "status": rs.status,
+            }),
+            None => json!({"type": "unknown"}),
+        };
+        Ok(json!({ "contract": contract_json }))
     }
 }
 
@@ -758,6 +1171,181 @@ fn get_tools_list() -> Value {
                     },
                     "required": ["borrower_id"]
                 }
+            },
+            {
+                "name": "create_invoice_contract",
+                "description": "Create a smart invoice contract with automation (auto-debit on due date, late fees). Higher-level than purchase_invoice - includes contract management.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "supplier_id": {"type": "string", "description": "Supplier participant ID"},
+                        "buyer_id": {"type": "string", "description": "Buyer participant ID"},
+                        "amount_cents": {"type": "integer", "description": "Invoice amount in cents"},
+                        "issue_date": {"type": "integer", "description": "Issue date (Unix timestamp in milliseconds)"},
+                        "due_date": {"type": "integer", "description": "Due date (Unix timestamp in milliseconds)"},
+                        "payment_terms": {"type": "string", "description": "Payment terms (e.g., 'Net 30')"},
+                        "auto_debit": {"type": "boolean", "description": "Enable automatic debit on due date"},
+                        "late_fee_cents": {"type": "integer", "description": "Late fee in cents if not paid by due date"},
+                        "reference": {"type": "string", "description": "Invoice reference"}
+                    },
+                    "required": ["supplier_id", "buyer_id", "amount_cents", "issue_date", "due_date", "reference"]
+                }
+            },
+            {
+                "name": "get_invoice_contract",
+                "description": "Get details of an invoice contract by ID.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "contract_id": {"type": "string", "description": "Invoice contract ID"}
+                    },
+                    "required": ["contract_id"]
+                }
+            },
+            {
+                "name": "create_subscription_contract",
+                "description": "Create a subscription contract with recurring billing (e.g., monthly SaaS fee). Supports auto-debit and cancellation notice periods.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "provider_id": {"type": "string", "description": "Service provider participant ID"},
+                        "subscriber_id": {"type": "string", "description": "Subscriber participant ID"},
+                        "monthly_fee_cents": {"type": "integer", "description": "Monthly subscription fee in cents"},
+                        "billing_date": {"type": "string", "description": "Billing date pattern (e.g., 'every 1st', 'every 15th')"},
+                        "auto_debit": {"type": "boolean", "description": "Enable automatic monthly debit"},
+                        "cancellation_notice_days": {"type": "integer", "description": "Days notice required for cancellation"},
+                        "start_date": {"type": "integer", "description": "Start date (Unix timestamp in milliseconds)"},
+                        "end_date": {"type": "integer", "description": "Optional end date (Unix timestamp in milliseconds)"}
+                    },
+                    "required": ["provider_id", "subscriber_id", "monthly_fee_cents", "billing_date", "start_date"]
+                }
+            },
+            {
+                "name": "get_subscription_contract",
+                "description": "Get details of a subscription contract by ID.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "contract_id": {"type": "string", "description": "Subscription contract ID"}
+                    },
+                    "required": ["contract_id"]
+                }
+            },
+            {
+                "name": "create_conditional_payment",
+                "description": "Create a conditional payment contract that executes when conditions are met (e.g., 'if_service_completed'). Payment is held until trigger condition is satisfied.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "payer_id": {"type": "string", "description": "Payer participant ID"},
+                        "receiver_id": {"type": "string", "description": "Receiver participant ID"},
+                        "amount_cents": {"type": "integer", "description": "Payment amount in cents"},
+                        "condition_type": {"type": "string", "description": "Condition type (e.g., 'if_service_completed')"},
+                        "trigger": {"type": "string", "description": "Trigger condition (e.g., \"status = 'completed'\")"}
+                    },
+                    "required": ["payer_id", "receiver_id", "amount_cents", "condition_type", "trigger"]
+                }
+            },
+            {
+                "name": "get_conditional_payment",
+                "description": "Get details of a conditional payment contract by ID.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "contract_id": {"type": "string", "description": "Conditional payment contract ID"}
+                    },
+                    "required": ["contract_id"]
+                }
+            },
+            {
+                "name": "create_revenue_share_contract",
+                "description": "Create a revenue share contract that automatically splits revenue from transactions among multiple parties (e.g., 70% salon, 20% supplier, 10% platform).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "transaction_type": {"type": "string", "description": "Transaction type to apply revenue share to (e.g., 'service_sale')"},
+                        "parties": {
+                            "type": "array",
+                            "description": "Array of parties with their share percentages",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "participant_id": {"type": "string"},
+                                    "share": {"type": "number", "description": "Share as decimal (e.g., 0.70 for 70%)"}
+                                },
+                                "required": ["participant_id", "share"]
+                            }
+                        },
+                        "auto_split": {"type": "boolean", "description": "Enable automatic revenue splitting on each transaction"}
+                    },
+                    "required": ["transaction_type", "parties"]
+                }
+            },
+            {
+                "name": "get_revenue_share_contract",
+                "description": "Get details of a revenue share contract by ID.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "contract_id": {"type": "string", "description": "Revenue share contract ID"}
+                    },
+                    "required": ["contract_id"]
+                }
+            },
+            {
+                "name": "list_contracts",
+                "description": "List all contracts with optional filters by type, status, or participant.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "contract_type": {
+                            "type": "string",
+                            "enum": ["loan", "invoice", "subscription", "conditional_payment", "revenue_share"],
+                            "description": "Optional: Filter by contract type"
+                        },
+                        "status": {"type": "string", "description": "Optional: Filter by status (e.g., 'active', 'completed')"},
+                        "participant_id": {"type": "string", "description": "Optional: Filter by participant ID (any role)"},
+                        "limit": {"type": "integer", "description": "Maximum results (default: 100)"}
+                    },
+                    "required": []
+                }
+            },
+            {
+                "name": "execute_contract",
+                "description": "Manually execute a contract (e.g., trigger conditional payment when conditions are met, process subscription billing).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "contract_id": {"type": "string", "description": "Contract ID"},
+                        "contract_type": {
+                            "type": "string",
+                            "enum": ["loan", "invoice", "subscription", "conditional_payment", "revenue_share"],
+                            "description": "Contract type"
+                        }
+                    },
+                    "required": ["contract_id", "contract_type"]
+                }
+            },
+            {
+                "name": "update_contract_status",
+                "description": "Update the status of a contract (e.g., pause, cancel, complete).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "contract_id": {"type": "string", "description": "Contract ID"},
+                        "contract_type": {
+                            "type": "string",
+                            "enum": ["loan", "invoice", "subscription", "conditional_payment", "revenue_share"],
+                            "description": "Contract type"
+                        },
+                        "status": {
+                            "type": "string",
+                            "enum": ["active", "paused", "completed", "cancelled"],
+                            "description": "New status"
+                        }
+                    },
+                    "required": ["contract_id", "contract_type", "status"]
+                }
             }
         ]
     })
@@ -783,6 +1371,27 @@ fn account_type_string_to_int(account_type: &str) -> i32 {
         "escrow" => 5,
         "fees" => 6,
         "usage" => 7,
+        _ => 0,
+    }
+}
+
+fn contract_type_string_to_int(contract_type: &str) -> i32 {
+    match contract_type.to_lowercase().as_str() {
+        "loan" => ContractType::Loan as i32,
+        "invoice" => ContractType::Invoice as i32,
+        "subscription" => ContractType::Subscription as i32,
+        "conditional_payment" => ContractType::ConditionalPayment as i32,
+        "revenue_share" => ContractType::RevenueShare as i32,
+        _ => 0,
+    }
+}
+
+fn contract_status_string_to_int(status: &str) -> i32 {
+    match status.to_lowercase().as_str() {
+        "active" => ContractStatus::Active as i32,
+        "paused" => ContractStatus::Paused as i32,
+        "completed" => ContractStatus::Completed as i32,
+        "cancelled" => ContractStatus::Cancelled as i32,
         _ => 0,
     }
 }
@@ -964,6 +1573,131 @@ async fn handle_tool_call(client: &mut ScalegraphClient, name: &str, args: &Valu
         "get_total_debt" => {
             let borrower_id = args.get("borrower_id").and_then(|v| v.as_str()).unwrap_or("");
             client.get_total_debt(borrower_id).await
+        }
+
+        "create_invoice_contract" => {
+            let supplier_id = args.get("supplier_id").and_then(|v| v.as_str()).unwrap_or("");
+            let buyer_id = args.get("buyer_id").and_then(|v| v.as_str()).unwrap_or("");
+            let amount_cents = args.get("amount_cents").and_then(|v| v.as_i64()).unwrap_or(0);
+            let issue_date = args.get("issue_date").and_then(|v| v.as_i64()).unwrap_or(0);
+            let due_date = args.get("due_date").and_then(|v| v.as_i64()).unwrap_or(0);
+            let payment_terms = args.get("payment_terms").and_then(|v| v.as_str()).unwrap_or("Net 30");
+            let auto_debit = args.get("auto_debit").and_then(|v| v.as_bool()).unwrap_or(false);
+            let late_fee_cents = args.get("late_fee_cents").and_then(|v| v.as_i64()).unwrap_or(0);
+            let reference = args.get("reference").and_then(|v| v.as_str()).unwrap_or("");
+            client
+                .create_invoice_contract(
+                    supplier_id,
+                    buyer_id,
+                    amount_cents,
+                    issue_date,
+                    due_date,
+                    payment_terms,
+                    auto_debit,
+                    late_fee_cents,
+                    reference,
+                )
+                .await
+        }
+
+        "get_invoice_contract" => {
+            let contract_id = args.get("contract_id").and_then(|v| v.as_str()).unwrap_or("");
+            client.get_invoice_contract(contract_id).await
+        }
+
+        "create_subscription_contract" => {
+            let provider_id = args.get("provider_id").and_then(|v| v.as_str()).unwrap_or("");
+            let subscriber_id = args.get("subscriber_id").and_then(|v| v.as_str()).unwrap_or("");
+            let monthly_fee_cents = args.get("monthly_fee_cents").and_then(|v| v.as_i64()).unwrap_or(0);
+            let billing_date = args.get("billing_date").and_then(|v| v.as_str()).unwrap_or("every 1st");
+            let auto_debit = args.get("auto_debit").and_then(|v| v.as_bool()).unwrap_or(true);
+            let cancellation_notice_days = args.get("cancellation_notice_days").and_then(|v| v.as_i64()).map(|v| v as i32).unwrap_or(30);
+            let start_date = args.get("start_date").and_then(|v| v.as_i64()).unwrap_or(0);
+            let end_date = args.get("end_date").and_then(|v| v.as_i64());
+            client
+                .create_subscription_contract(
+                    provider_id,
+                    subscriber_id,
+                    monthly_fee_cents,
+                    billing_date,
+                    auto_debit,
+                    cancellation_notice_days,
+                    start_date,
+                    end_date,
+                )
+                .await
+        }
+
+        "get_subscription_contract" => {
+            let contract_id = args.get("contract_id").and_then(|v| v.as_str()).unwrap_or("");
+            client.get_subscription_contract(contract_id).await
+        }
+
+        "create_conditional_payment" => {
+            let payer_id = args.get("payer_id").and_then(|v| v.as_str()).unwrap_or("");
+            let receiver_id = args.get("receiver_id").and_then(|v| v.as_str()).unwrap_or("");
+            let amount_cents = args.get("amount_cents").and_then(|v| v.as_i64()).unwrap_or(0);
+            let condition_type = args.get("condition_type").and_then(|v| v.as_str()).unwrap_or("");
+            let trigger = args.get("trigger").and_then(|v| v.as_str()).unwrap_or("");
+            client
+                .create_conditional_payment(payer_id, receiver_id, amount_cents, condition_type, trigger)
+                .await
+        }
+
+        "get_conditional_payment" => {
+            let contract_id = args.get("contract_id").and_then(|v| v.as_str()).unwrap_or("");
+            client.get_conditional_payment(contract_id).await
+        }
+
+        "create_revenue_share_contract" => {
+            let transaction_type = args.get("transaction_type").and_then(|v| v.as_str()).unwrap_or("");
+            let parties: Vec<(String, f64)> = args
+                .get("parties")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|p| {
+                            let participant_id = p.get("participant_id")?.as_str()?.to_string();
+                            let share = p.get("share")?.as_f64()?;
+                            Some((participant_id, share))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            let auto_split = args.get("auto_split").and_then(|v| v.as_bool()).unwrap_or(true);
+            client
+                .create_revenue_share_contract(transaction_type, parties, auto_split)
+                .await
+        }
+
+        "get_revenue_share_contract" => {
+            let contract_id = args.get("contract_id").and_then(|v| v.as_str()).unwrap_or("");
+            client.get_revenue_share_contract(contract_id).await
+        }
+
+        "list_contracts" => {
+            let contract_type_str = args.get("contract_type").and_then(|v| v.as_str());
+            let contract_type = contract_type_str.map(|s| contract_type_string_to_int(s));
+            let status = args.get("status").and_then(|v| v.as_str());
+            let participant_id = args.get("participant_id").and_then(|v| v.as_str());
+            let limit = args.get("limit").and_then(|v| v.as_i64()).map(|v| v as i32);
+            client.list_contracts(contract_type, status, participant_id, limit).await
+        }
+
+        "execute_contract" => {
+            let contract_id = args.get("contract_id").and_then(|v| v.as_str()).unwrap_or("");
+            let contract_type_str = args.get("contract_type").and_then(|v| v.as_str()).unwrap_or("");
+            let contract_type = contract_type_string_to_int(contract_type_str);
+            client.execute_contract(contract_id, contract_type).await
+        }
+
+        "update_contract_status" => {
+            let contract_id = args.get("contract_id").and_then(|v| v.as_str()).unwrap_or("");
+            let contract_type_str = args.get("contract_type").and_then(|v| v.as_str()).unwrap_or("");
+            let contract_type = contract_type_string_to_int(contract_type_str);
+            let status_str = args.get("status").and_then(|v| v.as_str()).unwrap_or("");
+            let status = contract_status_string_to_int(status_str);
+            client.update_contract_status(contract_id, contract_type, status).await
         }
 
         _ => Ok(json!({"error": format!("Unknown tool: {}", name)})),

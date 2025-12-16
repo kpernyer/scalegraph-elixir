@@ -8,12 +8,13 @@ defmodule Scalegraph.Ledger.Server do
   System errors are raised as exceptions and logged at error level.
   """
 
-  use GRPC.Server, service: Scalegraph.Proto.LedgerService.Service
+  use GRPC.Server, service: Scalegraph.Ledger.LedgerService.Service
 
   require Logger
 
   alias Scalegraph.Ledger.Core
-  alias Scalegraph.Proto
+  alias Scalegraph.Common
+  alias Scalegraph.Ledger, as: LedgerProto
 
   # Account type mapping
   @reverse_account_type_mapping %{
@@ -75,7 +76,7 @@ defmodule Scalegraph.Ledger.Server do
   def get_balance(request, _stream) do
     case Core.get_balance(request.account_id) do
       {:ok, balance} ->
-        %Proto.GetBalanceResponse{
+        %LedgerProto.GetBalanceResponse{
           account_id: request.account_id,
           balance: balance
         }
@@ -200,7 +201,7 @@ defmodule Scalegraph.Ledger.Server do
 
     case Core.list_transactions(opts) do
       {:ok, transactions} ->
-        %Proto.ListTransactionsResponse{
+        %LedgerProto.ListTransactionsResponse{
           transactions: Enum.map(transactions, &transaction_to_proto/1)
         }
 
@@ -225,13 +226,13 @@ defmodule Scalegraph.Ledger.Server do
   defp transaction_to_proto(tx) do
     entries =
       Enum.map(tx.entries, fn entry ->
-        %Proto.TransferEntry{
+        %Common.TransferEntry{
           account_id: entry.account_id,
           amount: entry.amount
         }
       end)
 
-    %Proto.Transaction{
+    %Common.Transaction{
       id: tx.id,
       type: tx.type,
       entries: entries,
@@ -241,7 +242,7 @@ defmodule Scalegraph.Ledger.Server do
   end
 
   defp account_to_proto(account) do
-    %Proto.Account{
+    %Common.Account{
       id: account.id,
       participant_id: account.participant_id || "",
       account_type:

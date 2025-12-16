@@ -8,7 +8,8 @@ defmodule Mix.Tasks.Scalegraph.Seed do
 
   ## Options
 
-      --reset  Clear existing data before seeding
+      --reset   Clear existing data before seeding
+      --enrich  Enrich existing participants with services from seed data
 
   ## Note
 
@@ -26,15 +27,23 @@ defmodule Mix.Tasks.Scalegraph.Seed do
     Mix.Task.run("app.start")
 
     reset? = "--reset" in args
+    enrich? = "--enrich" in args
 
-    if reset? do
-      Mix.shell().info("Resetting database...")
-      result = Scalegraph.Seed.reset()
-      Mix.shell().info("Reset complete: #{inspect(result)}")
-    else
-      Mix.shell().info("Seeding database...")
-      result = Scalegraph.Seed.run()
-      Mix.shell().info("Seed complete: #{inspect(result)}")
+    cond do
+      reset? ->
+        Mix.shell().info("Resetting database...")
+        result = Scalegraph.Seed.reset()
+        Mix.shell().info("Reset complete: #{inspect(result)}")
+
+      enrich? ->
+        Mix.shell().info("Enriching existing participants with services...")
+        result = Scalegraph.Seed.enrich_existing_participants()
+        Mix.shell().info("Enrichment complete: #{inspect(result)}")
+
+      true ->
+        Mix.shell().info("Seeding database...")
+        result = Scalegraph.Seed.run()
+        Mix.shell().info("Seed complete: #{inspect(result)}")
     end
   end
 end

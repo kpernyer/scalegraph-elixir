@@ -1,0 +1,76 @@
+syntax = "proto3";
+
+package scalegraph.ledger;
+
+import "common.proto";
+
+// Elixir-specific option (ignored by Rust/tonic)
+option elixir_module_prefix = "Scalegraph.Proto";
+
+// ============================================================================
+// Ledger Service - Core Double-Entry Bookkeeping
+// ============================================================================
+// This service provides pure accounting operations with no business semantics.
+// All transactions are generic transfers. Business rules are handled in the
+// Business Rules layer.
+
+// Account operations
+message CreateAccountRequest {
+  string account_id = 1;
+  int64 initial_balance = 2;
+  map<string, string> metadata = 3;
+}
+
+message GetAccountRequest {
+  string account_id = 1;
+}
+
+message GetBalanceRequest {
+  string account_id = 1;
+}
+
+message GetBalanceResponse {
+  string account_id = 1;
+  int64 balance = 2;
+}
+
+// Transaction operations
+message CreditRequest {
+  string account_id = 1;
+  int64 amount = 2;
+  string reference = 3;
+}
+
+message DebitRequest {
+  string account_id = 1;
+  int64 amount = 2;
+  string reference = 3;
+}
+
+message TransferRequest {
+  repeated scalegraph.common.TransferEntry entries = 1;
+  string reference = 2;
+}
+
+message ListTransactionsRequest {
+  int32 limit = 1;           // Max transactions to return (default: 50)
+  string account_id = 2;     // Optional: filter by account
+}
+
+message ListTransactionsResponse {
+  repeated scalegraph.common.Transaction transactions = 1;
+}
+
+// Ledger service definition
+service LedgerService {
+  // Account operations
+  rpc CreateAccount(CreateAccountRequest) returns (scalegraph.common.Account);
+  rpc GetAccount(GetAccountRequest) returns (scalegraph.common.Account);
+  rpc GetBalance(GetBalanceRequest) returns (GetBalanceResponse);
+
+  // Transaction operations
+  rpc Credit(CreditRequest) returns (scalegraph.common.Transaction);
+  rpc Debit(DebitRequest) returns (scalegraph.common.Transaction);
+  rpc Transfer(TransferRequest) returns (scalegraph.common.Transaction);
+  rpc ListTransactions(ListTransactionsRequest) returns (ListTransactionsResponse);
+}

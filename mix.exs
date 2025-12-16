@@ -8,7 +8,9 @@ defmodule Scalegraph.MixProject do
       elixir: "~> 1.17",
       otp_release: "~> 27",
       start_permanent: Mix.env() == :prod,
-      deps: deps()
+      deps: deps(),
+      # Automatically compile protobuf before regular compilation
+      aliases: aliases()
     ]
   end
 
@@ -25,6 +27,12 @@ defmodule Scalegraph.MixProject do
       {:protobuf, "~> 0.12"},
       {:yaml_elixir, "~> 2.9"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
+    ]
+  end
+  
+  defp aliases do
+    [
+      compile: ["protobuf.compile", "compile"]
     ]
   end
 end
