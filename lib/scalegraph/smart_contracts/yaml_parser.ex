@@ -214,16 +214,18 @@ defmodule Scalegraph.SmartContracts.YamlParser do
 
   defp normalize_contract_type(type) when is_atom(type), do: type
   defp normalize_contract_type(type) when is_binary(type) do
-    case String.downcase(type) do
-      "loan" -> :loan
-      "invoice" -> :invoice
-      "subscription" -> :subscription
-      "revenue_share" -> :revenue_share
-      "conditional_payment" -> :conditional_payment
-      "supplier_registration" -> :supplier_registration
-      "ecosystem_partner_membership" -> :ecosystem_partner_membership
-      "generic" -> :generic
-      other -> String.to_existing_atom(other)
+    try do
+      case String.downcase(type) do
+        "loan" -> :loan
+        "invoice" -> :invoice
+        "subscription" -> :subscription
+        "revenue_share" -> :revenue_share
+        "conditional_payment" -> :conditional_payment
+        "supplier_registration" -> :supplier_registration
+        "ecosystem_partner_membership" -> :ecosystem_partner_membership
+        "generic" -> :generic
+        other -> String.to_existing_atom(other)
+      end
     rescue
       ArgumentError -> :generic
     end
@@ -275,10 +277,10 @@ defmodule Scalegraph.SmartContracts.YamlParser do
 
   defp parameter_value_to_string(value) when is_binary(value), do: value
   defp parameter_value_to_string(value) when is_integer(value), do: Integer.to_string(value)
+  defp parameter_value_to_string(nil), do: ""
   defp parameter_value_to_string(value) when is_float(value), do: Float.to_string(value)
   defp parameter_value_to_string(value) when is_boolean(value), do: to_string(value)
   defp parameter_value_to_string(value) when is_atom(value), do: Atom.to_string(value)
-  defp parameter_value_to_string(value) when is_nil, do: ""
   defp parameter_value_to_string(value), do: inspect(value)
 
   defp normalize_metadata(metadata) when is_map(metadata) do

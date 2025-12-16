@@ -1,0 +1,38 @@
+# Invoice Contract with Auto-Payment
+# This contract automatically pays an invoice on the due date
+
+name: "Invoice Auto-Payment: ${invoice_id}"
+description: "Auto-payment for invoice ${invoice_id} on ${due_date}"
+type: invoice
+status: active
+
+conditions:
+  - type: time
+    parameters:
+      expires_at: ${due_date}  # Invoice due date (payment happens on this date)
+  
+  # Optional: Only pay if buyer has sufficient balance
+  - type: balance
+    parameters:
+      account_id: "${buyer_id}:operating"
+      min_balance: ${invoice_amount_cents}  # Must have enough to pay invoice
+
+actions:
+  # Automatic invoice payment
+  - type: transfer
+    parameters:
+      from_account: "${buyer_id}:operating"
+      to_account: "${supplier_id}:revenue"
+      amount_cents: ${invoice_amount_cents}
+      reference: "INVOICE_PAYMENT:${invoice_id}"
+
+metadata:
+  invoice_id: "${invoice_id}"
+  supplier_id: "${supplier_id}"
+  buyer_id: "${buyer_id}"
+  invoice_amount_cents: ${invoice_amount_cents}
+  issue_date: ${issue_date}
+  due_date: ${due_date}
+  payment_terms: "${payment_terms}"  # e.g., "Net 30"
+  created_at: ${created_at}
+

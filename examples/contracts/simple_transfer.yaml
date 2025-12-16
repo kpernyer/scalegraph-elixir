@@ -1,0 +1,29 @@
+# Simple Transfer Contract
+# A basic example showing a one-time transfer between accounts
+
+name: "Simple Transfer: ${from_account} → ${to_account}"
+description: "One-time transfer of ${amount_cents} cents"
+type: generic
+status: active
+
+conditions:
+  - type: time
+    parameters:
+      expires_at: ${expires_at}  # When transfer should execute (or latest execution date)
+
+actions:
+  - type: transfer
+    parameters:
+      from_account: "${from_account}"
+      to_account: "${to_account}"
+      amount_cents: ${amount_cents}
+      reference: "${reference}"
+
+metadata:
+  from_account: "${from_account}"
+  to_account: "${to_account}"
+  amount_cents: ${amount_cents}
+  reference: "${reference}"
+  created_at: ${created_at}
+  expires_at: ${expires_at}
+

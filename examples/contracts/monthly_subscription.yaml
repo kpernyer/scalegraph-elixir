@@ -1,0 +1,36 @@
+# Monthly Subscription Contract Example
+# This contract handles recurring monthly payments for a subscription service
+
+name: "Monthly Subscription: ${subscriber_id} → ${provider_id}"
+description: "Monthly subscription contract for ${service_name}"
+type: subscription
+status: active
+
+conditions:
+  - type: time
+    parameters:
+      first_payment_date: ${first_payment_date}  # When subscription starts
+      payment_interval_ms: 2592000000  # 30 days in milliseconds
+      total_payments: ${total_payments}  # Number of payments (null for indefinite)
+      expires_at: ${expires_at}  # When subscription ends
+
+actions:
+  # Monthly subscription payment
+  - type: transfer
+    parameters:
+      from_account: "${subscriber_id}:operating"
+      to_account: "${provider_id}:revenue"
+      amount_cents: ${monthly_amount_cents}
+      reference: "SUBSCRIPTION:${subscriber_id}:${provider_id}:${payment_number}"
+
+metadata:
+  subscriber_id: "${subscriber_id}"
+  provider_id: "${provider_id}"
+  service_name: "${service_name}"
+  monthly_amount_cents: ${monthly_amount_cents}
+  payment_interval_days: 30
+  total_payments: ${total_payments}
+  created_at: ${created_at}
+  first_payment_date: ${first_payment_date}
+  expires_at: ${expires_at}
+

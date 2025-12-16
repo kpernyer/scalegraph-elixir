@@ -1,0 +1,47 @@
+# Conditional Payment Contract
+# This contract executes a payment only when specific conditions are met
+
+name: "Conditional Payment: ${buyer_id} → ${supplier_id}"
+description: "Payment of ${amount_cents} cents when ${condition_description}"
+type: conditional_payment
+status: active
+
+conditions:
+  # Time condition: Payment must happen by this date
+  - type: time
+    parameters:
+      expires_at: ${expires_at}  # Latest date for payment
+  
+  # Balance condition: Buyer must have sufficient funds
+  - type: balance
+    parameters:
+      account_id: "${buyer_id}:operating"
+      min_balance: ${amount_cents}
+  
+  # Event condition: Payment triggered by specific event
+  # (e.g., "order_delivered", "service_completed", "milestone_reached")
+  - type: event
+    parameters:
+      event_type: "${trigger_event_type}"
+      order_id: "${order_id}"  # Optional: specific order/service ID
+
+actions:
+  # Execute payment when all conditions are met
+  - type: transfer
+    parameters:
+      from_account: "${buyer_id}:operating"
+      to_account: "${supplier_id}:revenue"
+      amount_cents: ${amount_cents}
+      reference: "CONDITIONAL_PAYMENT:${contract_id}:${trigger_event_type}"
+
+metadata:
+  contract_id: "${contract_id}"
+  buyer_id: "${buyer_id}"
+  supplier_id: "${supplier_id}"
+  amount_cents: ${amount_cents}
+  condition_description: "${condition_description}"  # Human-readable condition
+  trigger_event_type: "${trigger_event_type}"  # Event that triggers payment
+  order_id: "${order_id}"  # Optional: related order/service
+  created_at: ${created_at}
+  expires_at: ${expires_at}
+

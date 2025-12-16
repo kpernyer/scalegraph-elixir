@@ -132,5 +132,105 @@ YamlParser.parse_and_create(yaml_content,
 
 ## Example Contracts
 
-- `supplier_registration.yaml` - Supplier registration with registration fee and monthly fees
+This directory contains the following example contracts:
+
+### Core Contract Types
+
+1. **`supplier_registration.yaml`** - Supplier registration with registration fee and monthly fees
+   - One-time registration fee (50 EUR)
+   - Monthly fees triggered when first provider uses service
+   - 90/10 revenue split (orchestrator/provider)
+
+2. **`monthly_subscription.yaml`** - Recurring monthly subscription payments
+   - Time-based recurring payments
+   - Configurable payment interval and total payments
+   - Automatic subscription management
+
+3. **`loan_with_repayment.yaml`** - Loan contract with scheduled repayments
+   - Principal amount with interest
+   - Monthly repayment schedule
+   - Automatic repayment tracking
+
+4. **`invoice_auto_payment.yaml`** - Invoice with automatic payment on due date
+   - Time-based payment trigger (due date)
+   - Balance check before payment
+   - Automatic invoice settlement
+
+5. **`revenue_share.yaml`** - Revenue sharing between parties
+   - Percentage-based revenue split
+   - Event-triggered distribution
+   - Multi-party revenue sharing
+
+6. **`conditional_payment.yaml`** - Payment triggered by specific conditions
+   - Multiple condition types (time, balance, event)
+   - Event-driven execution
+   - Conditional logic
+
+7. **`ecosystem_partner_membership.yaml`** - Membership contract for ecosystem partners
+   - One-time membership fee
+   - Optional monthly membership fees
+   - Partner type management
+
+8. **`simple_transfer.yaml`** - Basic one-time transfer example
+   - Simple transfer between accounts
+   - Minimal configuration
+   - Good starting point for learning
+
+## Quick Start Examples
+
+### Loading a Subscription Contract
+
+```bash
+# Calculate dates (1 year subscription, starting today)
+NOW=$(date +%s)000
+FIRST_PAYMENT=$NOW
+EXPIRES=$((NOW + 365*24*60*60*1000))
+
+mix scalegraph.contract.load examples/contracts/monthly_subscription.yaml \
+  --variables subscriber_id=alice \
+  --variables provider_id=beauty_hosting \
+  --variables service_name="Premium Beauty Services" \
+  --variables monthly_amount_cents=5000 \
+  --variables total_payments=12 \
+  --variables first_payment_date=$FIRST_PAYMENT \
+  --variables expires_at=$EXPIRES \
+  --variables created_at=$NOW
+```
+
+### Loading a Loan Contract
+
+```bash
+NOW=$(date +%s)000
+FIRST_PAYMENT=$((NOW + 30*24*60*60*1000))  # 30 days from now
+LOAN_END=$((NOW + 12*30*24*60*60*1000))  # 12 months from now
+
+mix scalegraph.contract.load examples/contracts/loan_with_repayment.yaml \
+  --variables loan_id=loan_001 \
+  --variables lender_id=bank_001 \
+  --variables borrower_id=alice \
+  --variables principal_cents=100000 \
+  --variables monthly_payment_cents=9000 \
+  --variables interest_rate=0.05 \
+  --variables num_payments=12 \
+  --variables first_payment_date=$FIRST_PAYMENT \
+  --variables loan_end_date=$LOAN_END \
+  --variables created_at=$NOW
+```
+
+### Loading an Invoice Auto-Payment
+
+```bash
+NOW=$(date +%s)000
+DUE_DATE=$((NOW + 30*24*60*60*1000))  # 30 days from now
+
+mix scalegraph.contract.load examples/contracts/invoice_auto_payment.yaml \
+  --variables invoice_id=inv_001 \
+  --variables supplier_id=supplier_001 \
+  --variables buyer_id=alice \
+  --variables invoice_amount_cents=50000 \
+  --variables issue_date=$NOW \
+  --variables due_date=$DUE_DATE \
+  --variables payment_terms="Net 30" \
+  --variables created_at=$NOW
+```
 

@@ -1,0 +1,37 @@
+# Loan Contract with Scheduled Repayments
+# This contract manages a loan with automatic repayment schedule
+
+name: "Loan: ${borrower_id} → ${lender_id}"
+description: "Loan of ${principal_cents} cents with ${num_payments} monthly repayments"
+type: loan
+status: active
+
+conditions:
+  - type: time
+    parameters:
+      first_payment_date: ${first_payment_date}  # When first repayment is due
+      payment_interval_ms: 2592000000  # 30 days in milliseconds
+      total_payments: ${num_payments}  # Number of repayment installments
+      expires_at: ${loan_end_date}  # When loan must be fully repaid
+
+actions:
+  # Monthly loan repayment
+  - type: transfer
+    parameters:
+      from_account: "${borrower_id}:operating"
+      to_account: "${lender_id}:revenue"
+      amount_cents: ${monthly_payment_cents}
+      reference: "LOAN_REPAYMENT:${loan_id}:${payment_number}"
+
+metadata:
+  loan_id: "${loan_id}"
+  lender_id: "${lender_id}"
+  borrower_id: "${borrower_id}"
+  principal_cents: ${principal_cents}
+  monthly_payment_cents: ${monthly_payment_cents}
+  interest_rate: ${interest_rate}  # Annual interest rate as decimal (e.g., 0.05 for 5%)
+  num_payments: ${num_payments}
+  created_at: ${created_at}
+  first_payment_date: ${first_payment_date}
+  loan_end_date: ${loan_end_date}
+

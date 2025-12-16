@@ -1,0 +1,46 @@
+# Revenue Share Contract
+# This contract automatically distributes revenue between parties based on a percentage split
+
+name: "Revenue Share: ${provider_id} → ${partner_id}"
+description: "Revenue share contract: ${provider_share}% to provider, ${partner_share}% to partner"
+type: revenue_share
+status: active
+
+conditions:
+  - type: time
+    parameters:
+      expires_at: ${expires_at}  # When revenue share agreement ends
+  
+  # Optional: Trigger on specific events (e.g., when revenue is recorded)
+  - type: event
+    parameters:
+      event_type: "revenue_recorded"
+      provider_id: "${provider_id}"
+
+actions:
+  # Split revenue: provider gets their share
+  - type: transfer
+    parameters:
+      from_account: "${provider_id}:revenue"
+      to_account: "${provider_id}:operating"
+      amount_cents: ${provider_amount_cents}  # Calculated as revenue * provider_share
+      reference: "REVENUE_SHARE_PROVIDER:${contract_id}"
+  
+  # Split revenue: partner gets their share
+  - type: transfer
+    parameters:
+      from_account: "${provider_id}:revenue"
+      to_account: "${partner_id}:operating"
+      amount_cents: ${partner_amount_cents}  # Calculated as revenue * partner_share
+      reference: "REVENUE_SHARE_PARTNER:${contract_id}"
+
+metadata:
+  contract_id: "${contract_id}"
+  provider_id: "${provider_id}"
+  partner_id: "${partner_id}"
+  provider_share: ${provider_share}  # Decimal (e.g., 0.7 for 70%)
+  partner_share: ${partner_share}  # Decimal (e.g., 0.3 for 30%)
+  service_type: "${service_type}"  # Type of service generating revenue
+  created_at: ${created_at}
+  expires_at: ${expires_at}
+

@@ -291,10 +291,10 @@ impl App {
                     }
                     Some(Contract::Generic(gen)) => {
                         // Extract participants from metadata if available
-                        let participants = extract_participants_from_metadata(&gen.metadata, participant_id);
+                        let participants = Self::extract_participants_from_metadata(&gen.metadata, participant_id);
                         ContractInfo {
                             id: gen.id.clone(),
-                            contract_type: format!("Generic ({})", contract_type_to_string(gen.contract_type)),
+                            contract_type: format!("Generic ({})", Self::contract_type_to_string(gen.contract_type)),
                             description: format!("{}: {}", gen.name, gen.description),
                             participants,
                             next_execution: if gen.next_execution_at > 0 { Some(gen.next_execution_at) } else { None },
@@ -445,7 +445,7 @@ impl App {
                     if gen.next_execution_at > now && gen.status == 1 {  // 1 = ACTIVE
                         events.push(FutureEvent {
                             contract_id: gen.id.clone(),
-                            contract_type: format!("Generic ({})", contract_type_to_string(gen.contract_type)),
+                            contract_type: format!("Generic ({})", Self::contract_type_to_string(gen.contract_type)),
                             description: format!("{}: {}", gen.name, gen.description),
                             execution_time: gen.next_execution_at,
                         });
@@ -953,9 +953,6 @@ pub async fn run_app(
                         }
                         KeyCode::Char('4') if app.current_view != View::Transfer => {
                             app.goto_view(3);
-                        }
-                        KeyCode::Char('5') if app.current_view != View::Transfer => {
-                            app.goto_view(4);
                             let _ = app.load_future_events().await;
                         }
                         // List navigation

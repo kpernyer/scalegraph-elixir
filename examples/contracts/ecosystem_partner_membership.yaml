@@ -1,0 +1,43 @@
+# Ecosystem Partner Membership Contract
+# This contract manages membership fees for ecosystem partners (providers, suppliers, etc.)
+
+name: "Ecosystem Partner Membership: ${partner_id}"
+description: "Membership contract for ${partner_type} in ${ecosystem_name}"
+type: ecosystem_partner_membership
+status: active
+
+conditions:
+  - type: time
+    parameters:
+      expires_at: ${expires_at}  # Membership expiration date (typically 1 year)
+      first_payment_date: ${first_payment_date}  # When membership starts
+      payment_interval_ms: 2592000000  # 30 days (for monthly fees if applicable)
+
+actions:
+  # Initial membership fee (one-time)
+  - type: transfer
+    parameters:
+      from_account: "${partner_id}:operating"
+      to_account: "${orchestrator_id}:fees"
+      amount_cents: ${membership_fee_cents}
+      reference: "MEMBERSHIP_FEE:${partner_id}:${partner_type}"
+  
+  # Monthly membership fee (if applicable)
+  - type: transfer
+    parameters:
+      from_account: "${partner_id}:operating"
+      to_account: "${orchestrator_id}:fees"
+      amount_cents: ${monthly_fee_cents}
+      reference: "MONTHLY_MEMBERSHIP:${partner_id}:${payment_number}"
+
+metadata:
+  partner_id: "${partner_id}"
+  partner_type: "${partner_type}"  # "provider", "supplier", "buyer", etc.
+  ecosystem_name: "${ecosystem_name}"
+  orchestrator_id: "${orchestrator_id}"
+  membership_fee_cents: ${membership_fee_cents}
+  monthly_fee_cents: ${monthly_fee_cents}  # 0 if no monthly fee
+  created_at: ${created_at}
+  first_payment_date: ${first_payment_date}
+  expires_at: ${expires_at}
+

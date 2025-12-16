@@ -222,7 +222,7 @@ defmodule Scalegraph.SmartContracts.Core do
     result =
       :mnesia.transaction(fn ->
         :mnesia.foldl(
-          fn {_table, _id, contract_id, _schedule_type, cron_expression, next_execution_at,
+          fn {_table, _id, contract_id, _schedule_type, _cron_expression, next_execution_at,
               enabled, _metadata},
              acc ->
             if enabled and next_execution_at <= now do
@@ -478,8 +478,7 @@ defmodule Scalegraph.SmartContracts.Core do
     {:ok, generate_id()}
   end
   
-  defp execute_supplier_monthly_fee_action(action, contract) do
-    params = action["parameters"] || action[:parameters] || %{}
+  defp execute_supplier_monthly_fee_action(_action, contract) do
     metadata = contract.metadata || %{}
     
     # Check if monthly fee has started
@@ -576,7 +575,7 @@ defmodule Scalegraph.SmartContracts.Core do
     end
   end
 
-  defp calculate_next_execution(cron_expression) do
+  defp calculate_next_execution(_cron_expression) do
     # Simple implementation - in production, use a proper cron parser
     # For now, assume daily execution
     now = System.system_time(:millisecond)
@@ -786,7 +785,7 @@ defmodule Scalegraph.SmartContracts.Core do
       {:ok, contract} ->
         # Execute registration fee immediately
         case execute_transfer_action(registration_action, contract) do
-          {:ok, tx_id} ->
+          {:ok, _tx_id} ->
             Logger.info("Supplier registration fee paid: #{supplier_id} -> #{orchestrator_id}, #{registration_fee_cents} cents")
             
             # Create monthly schedule (will be activated when first provider uses the service)
@@ -858,7 +857,7 @@ defmodule Scalegraph.SmartContracts.Core do
             {:ok, updated_contract} ->
               # Execute first monthly fee immediately
               case execute_supplier_monthly_fee(updated_contract, updated_metadata) do
-                {:ok, tx_id} ->
+                {:ok, _tx_id} ->
                   Logger.info("First monthly fee executed for supplier: #{supplier_id}, triggered by provider: #{first_provider_id}")
                   {:ok, :started}
                 

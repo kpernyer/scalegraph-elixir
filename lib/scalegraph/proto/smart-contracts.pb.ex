@@ -9,6 +9,8 @@ defmodule Scalegraph.Smartcontracts.ContractType do
   field :SUBSCRIPTION, 3
   field :CONDITIONAL_PAYMENT, 4
   field :REVENUE_SHARE, 5
+  field :SUPPLIER_REGISTRATION, 6
+  field :ECOSYSTEM_PARTNER_MEMBERSHIP, 7
 end
 
 defmodule Scalegraph.Smartcontracts.ContractStatus do
@@ -358,6 +360,8 @@ defmodule Scalegraph.Smartcontracts.ContractResponse do
     type: Scalegraph.Smartcontracts.RevenueShareContract,
     json_name: "revenueShare",
     oneof: 0
+
+  field :generic, 5, type: Scalegraph.Smartcontracts.GenericContract, oneof: 0
 end
 
 defmodule Scalegraph.Smartcontracts.ListContractsResponse do
@@ -405,6 +409,109 @@ defmodule Scalegraph.Smartcontracts.UpdateContractStatusRequest do
     enum: true
 
   field :status, 3, type: Scalegraph.Smartcontracts.ContractStatus, enum: true
+end
+
+defmodule Scalegraph.Smartcontracts.Condition.ParametersEntry do
+  @moduledoc false
+
+  use Protobuf, map: true, protoc_gen_elixir_version: "0.15.0", syntax: :proto3
+
+  field :key, 1, type: :string
+  field :value, 2, type: :string
+end
+
+defmodule Scalegraph.Smartcontracts.Condition do
+  @moduledoc false
+
+  use Protobuf, protoc_gen_elixir_version: "0.15.0", syntax: :proto3
+
+  field :type, 1, type: :string
+  field :parameters, 2,
+    repeated: true,
+    type: Scalegraph.Smartcontracts.Condition.ParametersEntry,
+    map: true
+end
+
+defmodule Scalegraph.Smartcontracts.Action.ParametersEntry do
+  @moduledoc false
+
+  use Protobuf, map: true, protoc_gen_elixir_version: "0.15.0", syntax: :proto3
+
+  field :key, 1, type: :string
+  field :value, 2, type: :string
+end
+
+defmodule Scalegraph.Smartcontracts.Action do
+  @moduledoc false
+
+  use Protobuf, protoc_gen_elixir_version: "0.15.0", syntax: :proto3
+
+  field :type, 1, type: :string
+  field :parameters, 2,
+    repeated: true,
+    type: Scalegraph.Smartcontracts.Action.ParametersEntry,
+    map: true
+end
+
+defmodule Scalegraph.Smartcontracts.GenericContract.MetadataEntry do
+  @moduledoc false
+
+  use Protobuf, map: true, protoc_gen_elixir_version: "0.15.0", syntax: :proto3
+
+  field :key, 1, type: :string
+  field :value, 2, type: :string
+end
+
+defmodule Scalegraph.Smartcontracts.GenericContract do
+  @moduledoc false
+
+  use Protobuf, protoc_gen_elixir_version: "0.15.0", syntax: :proto3
+
+  field :id, 1, type: :string
+  field :name, 2, type: :string
+  field :description, 3, type: :string
+
+  field :contract_type, 4,
+    type: Scalegraph.Smartcontracts.ContractType,
+    json_name: "contractType",
+    enum: true
+
+  field :status, 5, type: Scalegraph.Smartcontracts.ContractStatus, enum: true
+  field :created_at, 6, type: :int64, json_name: "createdAt"
+  field :last_executed_at, 7, type: :int64, json_name: "lastExecutedAt"
+  field :next_execution_at, 8, type: :int64, json_name: "nextExecutionAt"
+  field :conditions, 9, repeated: true, type: Scalegraph.Smartcontracts.Condition
+  field :actions, 10, repeated: true, type: Scalegraph.Smartcontracts.Action
+
+  field :metadata, 11,
+    repeated: true,
+    type: Scalegraph.Smartcontracts.GenericContract.MetadataEntry,
+    map: true
+
+  field :yaml_source, 12, type: :string, json_name: "yamlSource"
+end
+
+defmodule Scalegraph.Smartcontracts.CreateGenericContractRequest.VariablesEntry do
+  @moduledoc false
+
+  use Protobuf, map: true, protoc_gen_elixir_version: "0.15.0", syntax: :proto3
+
+  field :key, 1, type: :string
+  field :value, 2, type: :string
+end
+
+defmodule Scalegraph.Smartcontracts.CreateGenericContractRequest do
+  @moduledoc false
+
+  use Protobuf, protoc_gen_elixir_version: "0.15.0", syntax: :proto3
+
+  field :yaml_content, 1, type: :string, json_name: "yamlContent"
+  field :yaml_file_path, 2, type: :string, json_name: "yamlFilePath"
+
+  field :variables, 3,
+    repeated: true,
+    type: Scalegraph.Smartcontracts.CreateGenericContractRequest.VariablesEntry,
+    map: true
 end
 
 defmodule Scalegraph.Smartcontracts.SmartContractService.Service do
@@ -461,6 +568,10 @@ defmodule Scalegraph.Smartcontracts.SmartContractService.Service do
   rpc :UpdateContractStatus,
       Scalegraph.Smartcontracts.UpdateContractStatusRequest,
       Scalegraph.Smartcontracts.ContractResponse
+
+  rpc :CreateGenericContract,
+      Scalegraph.Smartcontracts.CreateGenericContractRequest,
+      Scalegraph.Smartcontracts.GenericContract
 end
 
 defmodule Scalegraph.Smartcontracts.SmartContractService.Stub do
