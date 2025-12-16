@@ -1,0 +1,39 @@
+# Supplier Registration Contract Example
+# This YAML file defines a supplier registration contract with registration fee and monthly fees
+
+name: "Supplier Registration: ${supplier_id}"
+description: "Supplier registration contract with registration fee and monthly fees"
+type: supplier_registration
+status: active
+
+conditions:
+  - type: time
+    parameters:
+      expires_at: ${expires_at}  # One year from creation (calculated at runtime)
+
+actions:
+  # Registration fee (executed immediately)
+  - type: transfer
+    parameters:
+      from_account: "${supplier_id}:operating"
+      to_account: "${orchestrator_id}:fees"
+      amount_cents: 5000
+      reference: "SUPPLIER_REGISTRATION_FEE:${supplier_id}"
+  
+  # Monthly fee (triggered when first provider uses service)
+  - type: supplier_monthly_fee
+    parameters:
+      supplier_id: "${supplier_id}"
+      orchestrator_id: "${orchestrator_id}"
+      monthly_fee_cents: 10000
+      orchestrator_share: 0.9
+      first_provider_share: 0.1
+
+metadata:
+  supplier_id: "${supplier_id}"
+  orchestrator_id: "${orchestrator_id}"
+  registration_fee_cents: 5000
+  monthly_fee_cents: 10000
+  created_at: ${created_at}
+  expires_at: ${expires_at}
+

@@ -25,6 +25,11 @@ pub mod business {
     tonic::include_proto!("scalegraph.business");
 }
 
+#[allow(dead_code)]
+pub mod smartcontracts {
+    tonic::include_proto!("scalegraph.smartcontracts");
+}
+
 use anyhow::Result;
 use common::{Account, AccountType, Participant, ParticipantRole, Transaction, TransferEntry};
 use ledger::{
@@ -36,6 +41,10 @@ use business::{
     AccessPaymentRequest, BusinessTransactionResponse, GetParticipantAccountsRequest,
     GetParticipantRequest, ListParticipantsRequest, PayInvoiceRequest, PurchaseInvoiceRequest,
 };
+use smartcontracts::{
+    smart_contract_service_client::SmartContractServiceClient, ContractResponse,
+    ListContractsRequest,
+};
 use tonic::transport::Channel;
 
 #[derive(Clone)]
@@ -43,6 +52,7 @@ pub struct ScalegraphClient {
     ledger: LedgerServiceClient<Channel>,
     participant: ParticipantServiceClient<Channel>,
     business: BusinessServiceClient<Channel>,
+    contracts: SmartContractServiceClient<Channel>,
 }
 
 impl ScalegraphClient {
@@ -52,7 +62,8 @@ impl ScalegraphClient {
         Ok(Self {
             ledger: LedgerServiceClient::new(channel.clone()),
             participant: ParticipantServiceClient::new(channel.clone()),
-            business: BusinessServiceClient::new(channel),
+            business: BusinessServiceClient::new(channel.clone()),
+            contracts: SmartContractServiceClient::new(channel),
         })
     }
 
@@ -225,6 +236,25 @@ impl ScalegraphClient {
         };
         let response = self.business.access_payment(request).await?;
         Ok(response.into_inner())
+    }
+
+    // Smart contract operations
+
+    pub async fn list_contracts(
+        &mut self,
+        contract_type: Option<i32>,
+        status: Option<String>,
+        participant_id: Option<String>,
+        limit: Option<i32>,
+    ) -> Result<Vec<ContractResponse>> {
+        let request = ListContractsRequest {
+            contract_type: contract_type.unwrap_or(0),
+            status: status.unwrap_or_default(),
+            participant_id: participant_id.unwrap_or_default(),
+            limit: limit.unwrap_or(100),
+        };
+        let response = self.contracts.list_contracts(request).await?;
+        Ok(response.into_inner().contracts)
     }
 }
 

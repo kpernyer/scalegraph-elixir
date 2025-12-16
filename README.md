@@ -6,24 +6,40 @@ A distributed ledger system for multi-party ecosystems, built with Elixir/OTP, M
 
 Scalegraph provides atomic multi-party transactions and account management for ecosystem participants. It's designed for scenarios where multiple organizations need to coordinate financial flows with strong consistency guarantees.
 
-The system follows a **separation of concerns** architecture:
-- **Ledger Layer**: Immutable double-entry bookkeeping with generic transfers
-- **Business/Contract Layer**: Business logic, contracts, and workflows (invoices, loans, revenue-share, etc.)
+The system follows a **three-layer architecture** with strict separation of concerns:
 
-This design ensures the ledger remains simple and replayable while supporting complex business scenarios. See [`docs/LEDGER_DESIGN.md`](docs/LEDGER_DESIGN.md) for detailed architecture documentation.
+1. **Layer 1: Pure Core Ledger** - Immutable double-entry bookkeeping with generic transfers
+2. **Layer 2: Business Rules Layer** - Business logic with explicit financial terminology (invoices, loans, revenue-share, subscriptions)
+3. **Layer 3: Smart Contracts Layer** - Automation, cron scheduling, and agent-driven contract management
+
+This design ensures the ledger remains simple and replayable while supporting complex business scenarios and automated workflows. See [`ARCHITECTURE.md`](ARCHITECTURE.md) for detailed architecture documentation.
 
 ## Features
 
+### Core Ledger (Layer 1)
 - **Atomic Transactions**: Multi-party transfers with ACID guarantees via Mnesia
-- **Separation of Concerns**: Clean separation between ledger (double-entry bookkeeping) and business logic layers
 - **Generic Transfers**: Flexible transaction model that can represent any business scenario
+- **Account Types**: Operating, receivables, payables, escrow, fees, and usage accounts
+- **Immutable Audit Trail**: All transactions are self-describing and can reconstruct entire state
+- **Multi-Party Settlements**: Embedded financing and complex multi-party atomic transfers
+
+### Business Rules (Layer 2)
+- **Explicit Financial Terminology**: Loans, invoices, revenue-share, subscriptions
+- **Business Contracts**: Track business semantics separately from ledger
 - **Participant Management**: Organizations with defined roles in the ecosystem
 - **Participant Services**: Declare and discover capabilities (e.g., "financing", "access_control")
-- **Account Types**: Operating, receivables, payables, escrow, fees, and usage accounts
-- **Three-Party Settlements**: Embedded financing and complex multi-party atomic transfers
+
+### Smart Contracts (Layer 3)
+- **Automation**: Conditional execution based on triggers (time, balance, events)
+- **Cron Scheduling**: Periodic contract execution (e.g., monthly subscription billing)
+- **Agent-driven Management**: Active monitoring and execution of contracts
+- **Execution History**: Complete audit trail of all contract executions
+- **Reusable Examples**: Marketplace membership, supplier registration, ecosystem partner membership
+
+### Infrastructure
 - **gRPC API**: High-performance API for integration
 - **Rust TUI CLI**: Terminal interface for interacting with the ledger
-- **Replayable History**: All transactions are self-describing and can reconstruct entire state
+- **Three-Layer Architecture**: Clean separation of concerns for maintainability and scalability
 
 ## Requirements
 
@@ -231,6 +247,29 @@ Ledger.transfer([
 - ✅ **Balanced or unbalanced**: Sum doesn't need to be zero (allows fees, taxes, etc.)
 - ✅ **Audit trail**: Transaction recorded with all entries
 
+### Smart Contracts
+
+Create automated contracts that execute based on conditions:
+
+```elixir
+alias Scalegraph.SmartContracts.Examples
+
+# Marketplace membership contract - automatically charges all participants monthly
+{:ok, contract} = Examples.create_marketplace_membership("beauty_hosting",
+  monthly_fee_cents: 6000,        # 60 EUR per month
+  grace_period_months: 3,         # 3 months grace period
+  payment_months: 9,               # 9 monthly payments
+  renewal_notice_days: 30         # 30 days notice for renewal
+)
+
+# Contract automatically executes monthly via scheduler
+# - Checks daily for due payments
+# - Charges all participants
+# - Records execution history
+```
+
+See [`docs/SMART_CONTRACT_EXAMPLES.md`](docs/SMART_CONTRACT_EXAMPLES.md) for more smart contract examples.
+
 ## Participant Services
 
 Participants can declare services they provide (e.g., "financing", "access_control", "payment_processing"). Services are **fully persisted** in the database and can be used for service discovery.
@@ -298,28 +337,36 @@ mix test
 
 ## Architecture
 
-Scalegraph follows a layered architecture with clear separation of concerns:
+Scalegraph follows a **three-layer architecture** with strict separation of concerns:
 
-### Ledger Layer
+### Layer 1: Pure Core Ledger
 The immutable ledger handles only double-entry bookkeeping:
 - Generic transfers with entries that sum to zero
 - Account balances
 - Transaction audit trail
 - **No business semantics** - the ledger doesn't know what transactions represent
 
-### Business/Contract Layer
-Business logic and contracts are handled separately:
+### Layer 2: Business Rules Layer
+Business logic with explicit financial terminology:
 - Invoices, loans, revenue-share contracts
-- Conditional payments and subscriptions
-- State machines and workflows
+- Subscriptions and conditional payments
 - References ledger transactions but stores metadata separately
+- Uses explicit financial terminology (loans, invoices, etc.)
+
+### Layer 3: Smart Contracts Layer
+Automation and agent-driven contract management:
+- Cron-based scheduling (e.g., monthly subscription billing)
+- Conditional execution based on triggers
+- Active monitoring and execution of contracts
+- Reusable contract examples (marketplace membership, supplier registration, etc.)
 
 This design provides:
 - **Flexibility**: New business constructs require no changes to the ledger
 - **Replayability**: All transactions are self-describing
-- **Scalability**: Can build smart contracts on top of the business layer
+- **Automation**: Smart contracts handle recurring payments and workflows
+- **Scalability**: Each layer can be scaled independently
 
-For detailed architecture documentation, see [`docs/LEDGER_DESIGN.md`](docs/LEDGER_DESIGN.md).
+For detailed architecture documentation, see [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## Project Structure
 
@@ -347,11 +394,13 @@ scalegraph-elexir/
 
 ## Documentation
 
-- **[`docs/LEDGER_DESIGN.md`](docs/LEDGER_DESIGN.md)**: Architecture design, separation of concerns, and implementation plan
-- **[`docs/GIT_WORKFLOW.md`](docs/GIT_WORKFLOW.md)**: Git workflow guide for contributors
-- **[`ARCHITECTURE.md`](ARCHITECTURE.md)**: System architecture and design decisions
-- **[`CONVENTIONS.md`](CONVENTIONS.md)**: Coding conventions and best practices
+- **[`ARCHITECTURE.md`](ARCHITECTURE.md)**: Three-layer architecture, design decisions, and examples
 - **[`PROJECT.md`](PROJECT.md)**: Detailed component breakdown and data flow
+- **[`CONVENTIONS.md`](CONVENTIONS.md)**: Coding conventions and best practices
+- **[`docs/SMART_CONTRACT_EXAMPLES.md`](docs/SMART_CONTRACT_EXAMPLES.md)**: Smart contract examples and usage
+- **[`docs/GIT_WORKFLOW.md`](docs/GIT_WORKFLOW.md)**: Git workflow guide for contributors
+- **[`docs/CLI-USER-GUIDE.md`](docs/CLI-USER-GUIDE.md)**: CLI user guide
+- **[`docs/MCP.md`](docs/MCP.md)**: Model Context Protocol server documentation
 
 ## Contributing
 

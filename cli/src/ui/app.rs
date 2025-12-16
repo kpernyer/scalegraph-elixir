@@ -24,18 +24,20 @@ pub type AppResult<T> = Result<T>;
 pub enum View {
     Participants,
     ParticipantDetail,
-    Accounts,
     Transfer,
     History,
+    Future,
 }
 
 impl View {
     pub fn all() -> Vec<View> {
+        // Only include flat navigation views (tabs), not hierarchical views
+        // ParticipantDetail is accessed by drilling down from Participants, not via tabs
         vec![
             View::Participants,
-            View::Accounts,
             View::Transfer,
             View::History,
+            View::Future,
         ]
     }
 
@@ -43,9 +45,9 @@ impl View {
         match self {
             View::Participants => "Participants",
             View::ParticipantDetail => "Participant Details",
-            View::Accounts => "Accounts",
             View::Transfer => "Transfer",
             View::History => "History",
+            View::Future => "Future",
         }
     }
 }
@@ -74,10 +76,20 @@ pub struct ParticipantInfo {
 }
 
 #[derive(Debug, Clone)]
+pub struct ContractInfo {
+    pub id: String,
+    pub contract_type: String,
+    pub description: String,
+    pub participants: Vec<String>, // Other participants in the contract
+    pub next_execution: Option<i64>, // Next execution time in milliseconds
+}
+
+#[derive(Debug, Clone)]
 pub struct ParticipantDetail {
     pub info: ParticipantInfo,
     pub accounts: Vec<AccountInfo>,
     pub total_balance: i64,
+    pub contracts: Vec<ContractInfo>,
 }
 
 #[derive(Debug, Clone)]
@@ -103,6 +115,14 @@ pub struct TransferForm {
 }
 
 #[derive(Debug, Clone)]
+pub struct FutureEvent {
+    pub contract_id: String,
+    pub contract_type: String,
+    pub description: String,
+    pub execution_time: i64, // Unix timestamp in milliseconds
+}
+
+#[derive(Debug, Clone)]
 pub struct BreadcrumbSegment {
     pub label: String,
     pub view: View,
@@ -124,16 +144,18 @@ pub struct App {
     // Participant detail view
     pub participant_detail: Option<ParticipantDetail>,
 
-    // Accounts view
+    // Accounts (for transfer form)
     pub accounts: Vec<AccountInfo>,
     pub account_state: ListState,
-    pub selected_participant: Option<String>,
 
     // Transfer view
     pub transfer_form: TransferForm,
 
     // History
     pub history: Vec<String>,
+
+    // Future (scheduled events)
+    pub future_events: Vec<FutureEvent>,
 
     // Status
     #[allow(dead_code)]
@@ -159,9 +181,9 @@ impl App {
             participant_detail: None,
             accounts: Vec::new(),
             account_state,
-            selected_participant: None,
             transfer_form: TransferForm::default(),
             history: Vec::new(),
+            future_events: Vec::new(),
             status_message: None,
             loading: false,
         };
@@ -231,6 +253,93 @@ impl App {
         // Calculate total balance
         let total_balance: i64 = account_infos.iter().map(|a| a.balance).sum();
         
+        // Load contracts for this participant
+        let contracts = self.client.list_contracts(None, None, Some(participant_id.to_string()), Some(100)).await.unwrap_or_default();
+        
+        let contract_infos: Vec<ContractInfo> = contracts
+            .into_iter()
+            .map(|contract_resp| {
+                use crate::grpc::smartcontracts::contract_response::Contract;
+                match contract_resp.contract {
+                    Some(Contract::Invoice(inv)) => {
+                        let mut participants = vec![inv.supplier_id.clone(), inv.buyer_id.clone()];
+                        participants.retain(|p| p != participant_id);
+                        ContractInfo {
+                            id: inv.id,
+                            contract_type: "Invoice".to_string(),
+                            description: format!("Invoice: {} from {} to {}", 
+                                grpc::format_balance(inv.amount_cents),
+                                inv.supplier_id,
+                                inv.buyer_id),
+                            participants,
+                            next_execution: if inv.due_date > 0 { Some(inv.due_date) } else { None },
+                        }
+                    }
+                    Some(Contract::Subscription(sub)) => {
+                        let mut participants = vec![sub.provider_id.clone(), sub.subscriber_id.clone()];
+                        participants.retain(|p| p != participant_id);
+                        ContractInfo {
+                            id: sub.id,
+                            contract_type: "Subscription".to_string(),
+                            description: format!("Subscription: {} monthly from {} to {}", 
+                                grpc::format_balance(sub.monthly_fee_cents),
+                                sub.provider_id,
+                                sub.subscriber_id),
+                            participants,
+                            next_execution: if sub.next_billing_date > 0 { Some(sub.next_billing_date) } else { None },
+                        }
+                    }
+                    Some(Contract::Generic(gen)) => {
+                        // Extract participants from metadata if available
+                        let participants = extract_participants_from_metadata(&gen.metadata, participant_id);
+                        ContractInfo {
+                            id: gen.id.clone(),
+                            contract_type: format!("Generic ({})", contract_type_to_string(gen.contract_type)),
+                            description: format!("{}: {}", gen.name, gen.description),
+                            participants,
+                            next_execution: if gen.next_execution_at > 0 { Some(gen.next_execution_at) } else { None },
+                        }
+                    }
+                    Some(Contract::ConditionalPayment(cp)) => {
+                        let mut participants = vec![cp.payer_id.clone(), cp.receiver_id.clone()];
+                        participants.retain(|p| p != participant_id);
+                        ContractInfo {
+                            id: cp.id,
+                            contract_type: "Conditional Payment".to_string(),
+                            description: format!("Conditional Payment: {} from {} to {}", 
+                                grpc::format_balance(cp.amount_cents),
+                                cp.payer_id,
+                                cp.receiver_id),
+                            participants,
+                            next_execution: None, // Conditional payments don't have scheduled execution
+                        }
+                    }
+                    Some(Contract::RevenueShare(rs)) => {
+                        let participant_ids: Vec<String> = rs.parties.iter()
+                            .map(|p| p.participant_id.clone())
+                            .filter(|p| p != participant_id)
+                            .collect();
+                        ContractInfo {
+                            id: rs.id,
+                            contract_type: "Revenue Share".to_string(),
+                            description: format!("Revenue Share: {} parties for {}", 
+                                rs.parties.len(),
+                                rs.transaction_type),
+                            participants: participant_ids,
+                            next_execution: None, // Revenue share is event-driven
+                        }
+                    }
+                    None => ContractInfo {
+                        id: "unknown".to_string(),
+                        contract_type: "Unknown".to_string(),
+                        description: "Unknown contract type".to_string(),
+                        participants: vec![],
+                        next_execution: None,
+                    }
+                }
+            })
+            .collect();
+        
         let contact = participant.contact.as_ref().map(|c| ContactInfo {
             email: c.email.clone(),
             phone: c.phone.clone(),
@@ -264,24 +373,19 @@ impl App {
             info,
             accounts: account_infos,
             total_balance,
+            contracts: contract_infos,
         });
         
         self.loading = false;
         Ok(())
     }
 
-    pub async fn load_accounts(&mut self, participant_id: Option<&str>) -> Result<()> {
+    pub async fn load_accounts(&mut self) -> Result<()> {
         self.loading = true;
         self.accounts.clear();
 
-        let participant_ids: Vec<String> = if let Some(id) = participant_id {
-            vec![id.to_string()]
-        } else {
-            self.participants.iter().map(|p| p.id.clone()).collect()
-        };
-
-        for pid in participant_ids {
-            if let Ok(accounts) = self.client.get_participant_accounts(&pid).await {
+        for participant in &self.participants {
+            if let Ok(accounts) = self.client.get_participant_accounts(&participant.id).await {
                 for acc in accounts {
                     self.accounts.push(AccountInfo {
                         id: acc.id,
@@ -295,6 +399,102 @@ impl App {
 
         self.loading = false;
         Ok(())
+    }
+
+    pub async fn load_future_events(&mut self) -> Result<()> {
+        self.loading = true;
+        self.future_events.clear();
+
+        // Load all contracts
+        let contracts = self.client.list_contracts(None, Some("active".to_string()), None, Some(100)).await.unwrap_or_default();
+        
+        let mut events: Vec<FutureEvent> = Vec::new();
+        let now = chrono::Utc::now().timestamp_millis();
+        
+        use crate::grpc::smartcontracts::contract_response::Contract;
+        for contract_resp in contracts {
+            match contract_resp.contract {
+                Some(Contract::Invoice(inv)) => {
+                    if inv.due_date > now && inv.status == "pending" {
+                        events.push(FutureEvent {
+                            contract_id: inv.id,
+                            contract_type: "Invoice".to_string(),
+                            description: format!("Invoice payment: {} from {} to {}", 
+                                grpc::format_balance(inv.amount_cents),
+                                inv.supplier_id,
+                                inv.buyer_id),
+                            execution_time: inv.due_date,
+                        });
+                    }
+                }
+                Some(Contract::Subscription(sub)) => {
+                    if sub.next_billing_date > now && sub.status == "active" {
+                        events.push(FutureEvent {
+                            contract_id: sub.id,
+                            contract_type: "Subscription".to_string(),
+                            description: format!("Subscription billing: {} from {} to {}", 
+                                grpc::format_balance(sub.monthly_fee_cents),
+                                sub.provider_id,
+                                sub.subscriber_id),
+                            execution_time: sub.next_billing_date,
+                        });
+                    }
+                }
+                Some(Contract::Generic(gen)) => {
+                    // Handle generic contracts (YAML-based)
+                    if gen.next_execution_at > now && gen.status == 1 {  // 1 = ACTIVE
+                        events.push(FutureEvent {
+                            contract_id: gen.id.clone(),
+                            contract_type: format!("Generic ({})", contract_type_to_string(gen.contract_type)),
+                            description: format!("{}: {}", gen.name, gen.description),
+                            execution_time: gen.next_execution_at,
+                        });
+                    }
+                }
+                _ => {} // Conditional payments and revenue share don't have scheduled execution
+            }
+        }
+        
+        // Sort by execution time and take top 5
+        events.sort_by_key(|e| e.execution_time);
+        self.future_events = events.into_iter().take(5).collect();
+        
+        self.loading = false;
+        Ok(())
+    }
+
+    // Helper functions for generic contracts
+
+    fn contract_type_to_string(contract_type: i32) -> String {
+        match contract_type {
+            0 => "Generic".to_string(),
+            1 => "Loan".to_string(),
+            2 => "Invoice".to_string(),
+            3 => "Subscription".to_string(),
+            4 => "Conditional Payment".to_string(),
+            5 => "Revenue Share".to_string(),
+            6 => "Supplier Registration".to_string(),
+            7 => "Ecosystem Partner Membership".to_string(),
+            _ => format!("Unknown ({})", contract_type),
+        }
+    }
+
+    fn extract_participants_from_metadata(metadata: &std::collections::HashMap<String, String>, exclude_id: &str) -> Vec<String> {
+        let mut participants = Vec::new();
+        
+        // Common participant ID fields in metadata
+        let participant_fields = vec!["supplier_id", "buyer_id", "provider_id", "subscriber_id", 
+                                       "payer_id", "receiver_id", "orchestrator_id", "first_provider_id"];
+        
+        for field in participant_fields {
+            if let Some(id) = metadata.get(field) {
+                if id != exclude_id && !participants.contains(id) {
+                    participants.push(id.clone());
+                }
+            }
+        }
+        
+        participants
     }
 
     pub async fn load_transactions(&mut self) -> Result<()> {
@@ -410,35 +610,6 @@ impl App {
                     });
                 }
             }
-            View::Accounts => {
-                self.breadcrumb.push(BreadcrumbSegment {
-                    label: "Participants".to_string(),
-                    view: View::Participants,
-                    context: None,
-                });
-
-                if let Some(ref participant_id) = self.selected_participant {
-                    // Find participant name
-                    let participant_name = self
-                        .participants
-                        .iter()
-                        .find(|p| p.id == *participant_id)
-                        .map(|p| p.name.clone())
-                        .unwrap_or_else(|| participant_id.clone());
-                    
-                    self.breadcrumb.push(BreadcrumbSegment {
-                        label: participant_name,
-                        view: View::ParticipantDetail,
-                        context: Some(participant_id.clone()),
-                    });
-                }
-
-                self.breadcrumb.push(BreadcrumbSegment {
-                    label: "Accounts".to_string(),
-                    view: View::Accounts,
-                    context: self.selected_participant.clone(),
-                });
-            }
             View::Transfer => {
                 self.breadcrumb.push(BreadcrumbSegment {
                     label: "Transfer".to_string(),
@@ -453,6 +624,13 @@ impl App {
                     context: None,
                 });
             }
+            View::Future => {
+                self.breadcrumb.push(BreadcrumbSegment {
+                    label: "Future".to_string(),
+                    view: View::Future,
+                    context: None,
+                });
+            }
         }
     }
 
@@ -464,17 +642,6 @@ impl App {
             let segment = &self.breadcrumb[index];
             self.current_view = segment.view;
             
-            // Restore context if needed
-            if let Some(ref context) = segment.context {
-                if segment.view == View::Accounts {
-                    self.selected_participant = Some(context.clone());
-                } else if segment.view == View::ParticipantDetail {
-                    self.selected_participant = Some(context.clone());
-                }
-            } else if segment.view == View::Accounts {
-                self.selected_participant = None;
-            }
-            
             // Truncate breadcrumb to selected segment
             self.breadcrumb.truncate(index + 1);
             self.update_breadcrumb();
@@ -482,7 +649,7 @@ impl App {
     }
 
     /// Navigate to next view in the flat navigation dimension.
-    /// This switches between parallel views (Participants, Accounts, Transfer, History),
+    /// This switches between parallel views (Participants, ParticipantDetail, Transfer, History, Future),
     /// not hierarchical drill-down. Use breadcrumb/back for hierarchical navigation.
     pub fn next_view(&mut self) {
         let views = View::all();
@@ -491,10 +658,6 @@ impl App {
             .position(|v| *v == self.current_view)
             .unwrap_or(0);
         self.current_view = views[(idx + 1) % views.len()];
-        // Clear participant selection when leaving Accounts view
-        if self.current_view != View::Accounts {
-            self.selected_participant = None;
-        }
         self.update_breadcrumb();
     }
 
@@ -507,10 +670,6 @@ impl App {
             .position(|v| *v == self.current_view)
             .unwrap_or(0);
         self.current_view = views[(idx + views.len() - 1) % views.len()];
-        // Clear participant selection when leaving Accounts view
-        if self.current_view != View::Accounts {
-            self.selected_participant = None;
-        }
         self.update_breadcrumb();
     }
 
@@ -520,10 +679,6 @@ impl App {
         let views = View::all();
         if index < views.len() {
             self.current_view = views[index];
-            // Clear participant selection when switching to non-Accounts view
-            if self.current_view != View::Accounts {
-                self.selected_participant = None;
-            }
             self.update_breadcrumb();
         }
     }
@@ -534,12 +689,6 @@ impl App {
                 let i = self.participant_state.selected().unwrap_or(0);
                 if i < self.participants.len().saturating_sub(1) {
                     self.participant_state.select(Some(i + 1));
-                }
-            }
-            View::Accounts => {
-                let i = self.account_state.selected().unwrap_or(0);
-                if i < self.accounts.len().saturating_sub(1) {
-                    self.account_state.select(Some(i + 1));
                 }
             }
             View::Transfer => {
@@ -555,12 +704,6 @@ impl App {
                 let i = self.participant_state.selected().unwrap_or(0);
                 if i > 0 {
                     self.participant_state.select(Some(i - 1));
-                }
-            }
-            View::Accounts => {
-                let i = self.account_state.selected().unwrap_or(0);
-                if i > 0 {
-                    self.account_state.select(Some(i - 1));
                 }
             }
             View::Transfer => {
@@ -710,8 +853,9 @@ pub async fn run_app(
 ) -> AppResult<()> {
     // Initial data load - ignore errors to show UI even if server has issues
     let _ = app.load_participants().await;
-    let _ = app.load_accounts(None).await;
+    let _ = app.load_accounts().await;
     let _ = app.load_transactions().await;
+    let _ = app.load_future_events().await;
 
     loop {
         terminal.draw(|f| super::views::draw(f, &mut app))?;
@@ -749,9 +893,11 @@ pub async fn run_app(
                             } else {
                                 let was_transfer = app.current_view == View::Transfer;
                                 app.next_view();
-                                // Reload all accounts when entering Transfer view
+                                // Reload data when entering views
                                 if !was_transfer && app.current_view == View::Transfer {
-                                    let _ = app.load_accounts(None).await;
+                                    let _ = app.load_accounts().await;
+                                } else if app.current_view == View::Future {
+                                    let _ = app.load_future_events().await;
                                 }
                             }
                         }
@@ -763,9 +909,11 @@ pub async fn run_app(
                             } else {
                                 let was_transfer = app.current_view == View::Transfer;
                                 app.prev_view();
-                                // Reload all accounts when entering Transfer view
+                                // Reload data when entering views
                                 if !was_transfer && app.current_view == View::Transfer {
-                                    let _ = app.load_accounts(None).await;
+                                    let _ = app.load_accounts().await;
+                                } else if app.current_view == View::Future {
+                                    let _ = app.load_future_events().await;
                                 }
                             }
                         }
@@ -773,18 +921,22 @@ pub async fn run_app(
                             // Right arrow always switches to next tab
                             let was_transfer = app.current_view == View::Transfer;
                             app.next_view();
-                            // Reload all accounts when entering Transfer view
+                            // Reload data when entering views
                             if !was_transfer && app.current_view == View::Transfer {
-                                let _ = app.load_accounts(None).await;
+                                let _ = app.load_accounts().await;
+                            } else if app.current_view == View::Future {
+                                let _ = app.load_future_events().await;
                             }
                         }
                         KeyCode::Left => {
                             // Left arrow always switches to previous tab
                             let was_transfer = app.current_view == View::Transfer;
                             app.prev_view();
-                            // Reload all accounts when entering Transfer view
+                            // Reload data when entering views
                             if !was_transfer && app.current_view == View::Transfer {
-                                let _ = app.load_accounts(None).await;
+                                let _ = app.load_accounts().await;
+                            } else if app.current_view == View::Future {
+                                let _ = app.load_future_events().await;
                             }
                         }
                         // Number keys for direct tab access (not in Transfer view)
@@ -797,10 +949,14 @@ pub async fn run_app(
                         KeyCode::Char('3') if app.current_view != View::Transfer => {
                             // Entering Transfer view - load all accounts
                             app.goto_view(2);
-                            let _ = app.load_accounts(None).await;
+                            let _ = app.load_accounts().await;
                         }
                         KeyCode::Char('4') if app.current_view != View::Transfer => {
                             app.goto_view(3);
+                        }
+                        KeyCode::Char('5') if app.current_view != View::Transfer => {
+                            app.goto_view(4);
+                            let _ = app.load_future_events().await;
                         }
                         // List navigation
                         KeyCode::Down | KeyCode::Char('j') => {
@@ -812,7 +968,6 @@ pub async fn run_app(
                         // Home/End for list navigation
                         KeyCode::Home => match app.current_view {
                             View::Participants => app.participant_state.select(Some(0)),
-                            View::Accounts => app.account_state.select(Some(0)),
                             _ => {}
                         },
                         KeyCode::End => match app.current_view {
@@ -820,12 +975,6 @@ pub async fn run_app(
                                 let len = app.participants.len();
                                 if len > 0 {
                                     app.participant_state.select(Some(len - 1));
-                                }
-                            }
-                            View::Accounts => {
-                                let len = app.accounts.len();
-                                if len > 0 {
-                                    app.account_state.select(Some(len - 1));
                                 }
                             }
                             _ => {}
@@ -850,27 +999,21 @@ pub async fn run_app(
                                         app.update_breadcrumb();
                                     }
                                 }
-                            } else if app.current_view == View::ParticipantDetail {
-                                // Enter on detail view - navigate to accounts
-                                if let Some(ref detail) = app.participant_detail {
-                                    app.selected_participant = Some(detail.info.id.clone());
-                                    app.accounts = detail.accounts.clone();
-                                    app.current_view = View::Accounts;
-                                    app.update_breadcrumb();
-                                }
                             }
                         }
                         // Refresh
                         KeyCode::Char('r') if app.current_view != View::Transfer => {
                             let _ = app.load_participants().await;
-                            let _ = app.load_accounts(None).await;
+                            let _ = app.load_accounts().await;
                             let _ = app.load_transactions().await;
-                        }
-                        // Show all accounts
-                        KeyCode::Char('a') if app.current_view == View::Accounts => {
-                            app.selected_participant = None;
-                            let _ = app.load_accounts(None).await;
-                            app.update_breadcrumb();
+                            let _ = app.load_future_events().await;
+                            // Reload participant detail if viewing it
+                            if app.current_view == View::ParticipantDetail {
+                                let participant_id = app.participant_detail.as_ref().map(|d| d.info.id.clone());
+                                if let Some(pid) = participant_id {
+                                    let _ = app.load_participant_detail(&pid).await;
+                                }
+                            }
                         }
                         // Back navigation - move up the hierarchical dimension (breadcrumb)
                         // This is different from Tab/arrows which move in the flat dimension
@@ -880,20 +1023,16 @@ pub async fn run_app(
                             app.navigate_to_breadcrumb(target_index);
                             
                             // Reload data based on new view
-                            let participant_id = app.selected_participant.clone();
-                            if app.current_view == View::Accounts {
-                                if let Some(pid) = participant_id {
-                                    let _ = app.load_accounts(Some(&pid)).await;
-                                } else {
-                                    let _ = app.load_accounts(None).await;
-                                }
-                            } else if app.current_view == View::ParticipantDetail {
+                            if app.current_view == View::ParticipantDetail {
                                 // Reload participant detail if we're going back to it
-                                if let Some(ref pid) = participant_id {
-                                    let _ = app.load_participant_detail(pid).await;
+                                let participant_id = app.participant_detail.as_ref().map(|d| d.info.id.clone());
+                                if let Some(pid) = participant_id {
+                                    let _ = app.load_participant_detail(&pid).await;
                                 }
                             } else if app.current_view == View::Participants {
                                 let _ = app.load_participants().await;
+                            } else if app.current_view == View::Future {
+                                let _ = app.load_future_events().await;
                             }
                         }
                         // Text input for Transfer form

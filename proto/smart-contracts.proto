@@ -21,6 +21,8 @@ enum ContractType {
   SUBSCRIPTION = 3;
   CONDITIONAL_PAYMENT = 4;
   REVENUE_SHARE = 5;
+  SUPPLIER_REGISTRATION = 6;
+  ECOSYSTEM_PARTNER_MEMBERSHIP = 7;
 }
 
 // Contract status
@@ -161,6 +163,41 @@ message CreateRevenueShareContractRequest {
   map<string, string> metadata = 4;
 }
 
+// ============================================================================
+// Generic Contract (YAML-based, flexible structure)
+// ============================================================================
+
+message GenericContract {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  ContractType contract_type = 4;
+  ContractStatus status = 5;
+  int64 created_at = 6;
+  int64 last_executed_at = 7;
+  int64 next_execution_at = 8;  // Calculated from conditions/schedule
+  repeated Condition conditions = 9;
+  repeated Action actions = 10;
+  map<string, string> metadata = 11;
+  string yaml_source = 12;  // Original YAML definition (optional, for reference)
+}
+
+message Condition {
+  string type = 1;  // "time", "balance", "event", "custom"
+  map<string, string> parameters = 2;  // Flexible parameters (JSON-encoded values)
+}
+
+message Action {
+  string type = 1;  // "transfer", "invoice", "loan", "custom"
+  map<string, string> parameters = 2;  // Flexible parameters (JSON-encoded values)
+}
+
+message CreateGenericContractRequest {
+  string yaml_content = 1;  // YAML contract definition
+  string yaml_file_path = 2;  // Alternative: path to YAML file
+  map<string, string> variables = 3;  // Variable substitution (optional)
+}
+
 message GetContractRequest {
   string contract_id = 1;
   ContractType contract_type = 2;
@@ -179,6 +216,7 @@ message ContractResponse {
     SubscriptionContract subscription = 2;
     ConditionalPaymentContract conditional_payment = 3;
     RevenueShareContract revenue_share = 4;
+    GenericContract generic = 5;  // Generic YAML-based contract
   }
 }
 
@@ -226,6 +264,7 @@ service SmartContractService {
   rpc GetRevenueShareContract(GetContractRequest) returns (RevenueShareContract);
 
   // Generic contract operations
+  rpc CreateGenericContract(CreateGenericContractRequest) returns (GenericContract);
   rpc GetContract(GetContractRequest) returns (ContractResponse);
   rpc ListContracts(ListContractsRequest) returns (ListContractsResponse);
   rpc ExecuteContract(ExecuteContractRequest) returns (ExecuteContractResponse);

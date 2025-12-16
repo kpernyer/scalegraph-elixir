@@ -29,10 +29,36 @@ defmodule Scalegraph.Seed do
 
   @doc """
   Reset database and re-seed from file.
+  Clears all data from all storage systems, then seeds from YAML.
   """
   def reset do
-    Schema.clear_all()
+    clear_all_data()
     run()
+  end
+
+  @doc """
+  Clear all data from all storage systems (keeps schema intact).
+  This clears:
+  - Participants, accounts, transactions (Schema)
+  - Business invoices, loans, revenue share, subscriptions (BusinessStorage)
+  - Ledger accounts, transactions (LedgerStorage)
+  - Smart contracts, executions, schedules (SmartContractsStorage)
+  """
+  def clear_all_data do
+    Logger.info("Clearing all data from all storage systems...")
+    
+    alias Scalegraph.Storage.Schema
+    alias Scalegraph.Business.Storage, as: BusinessStorage
+    alias Scalegraph.Ledger.Storage, as: LedgerStorage
+    alias Scalegraph.SmartContracts.Storage, as: SmartContractsStorage
+    
+    Schema.clear_all()
+    BusinessStorage.clear_all()
+    LedgerStorage.clear_all()
+    SmartContractsStorage.clear_all()
+    
+    Logger.info("All data cleared (schema preserved)")
+    :ok
   end
 
   @doc """

@@ -64,7 +64,7 @@ fn draw_tabs(f: &mut Frame, app: &App, area: Rect) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(" Scalegraph Ledger  [←/→ or 1-4 to switch tabs] "),
+                .title(" Scalegraph Ledger  [←/→ or 1-5 to switch tabs] "),
         )
         .highlight_style(Style::default().fg(Color::Yellow))
         .select(
@@ -116,9 +116,9 @@ fn draw_main(f: &mut Frame, app: &mut App, area: Rect) {
     match app.current_view {
         View::Participants => draw_participants(f, app, area),
         View::ParticipantDetail => draw_participant_detail(f, app, area),
-        View::Accounts => draw_accounts(f, app, area),
         View::Transfer => draw_transfer(f, app, area),
         View::History => draw_history(f, app, area),
+        View::Future => draw_future(f, app, area),
     }
 }
 
@@ -453,7 +453,16 @@ fn draw_participant_detail(f: &mut Frame, app: &App, area: Rect) {
         );
     f.render_widget(contact, left_chunks[1]);
 
-    // Right side: Accounts Summary
+    // Right side: Accounts and Contracts
+    let right_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(8), // Accounts summary
+            Constraint::Min(0),   // Contracts
+        ])
+        .split(chunks[1]);
+
+    // Accounts Summary
     let account_summary_lines = vec![
         Line::from(vec![
             Span::styled("Total Balance: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
@@ -483,7 +492,7 @@ fn draw_participant_detail(f: &mut Frame, app: &App, area: Rect) {
     let mut account_list_lines: Vec<Line> = detail
         .accounts
         .iter()
-        .take(10) // Show first 10 accounts
+        .take(5) // Show first 5 accounts
         .map(|acc| {
             Line::from(vec![
                 Span::styled("  • ", Style::default().fg(Color::DarkGray)),
@@ -501,107 +510,147 @@ fn draw_participant_detail(f: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    if detail.accounts.len() > 10 {
+    if detail.accounts.len() > 5 {
         account_list_lines.push(Line::from(Span::styled(
-            format!("  ... and {} more", detail.accounts.len() - 10),
+            format!("  ... and {} more", detail.accounts.len() - 5),
             Style::default().fg(Color::DarkGray),
         )));
     }
 
-    let mut all_lines = account_summary_lines;
-    all_lines.extend(account_list_lines);
+    let mut all_account_lines = account_summary_lines;
+    all_account_lines.extend(account_list_lines);
 
-    let accounts_summary = Paragraph::new(all_lines)
+    let accounts_summary = Paragraph::new(all_account_lines)
         .block(
             Block::default()
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Green))
-                .title(" Accounts Summary "),
+                .title(" Accounts "),
         );
-    f.render_widget(accounts_summary, chunks[1]);
-}
+    f.render_widget(accounts_summary, right_chunks[0]);
 
-fn draw_accounts(f: &mut Frame, app: &mut App, area: Rect) {
-    let selected_idx = app.account_state.selected().unwrap_or(0);
-    let total = app.accounts.len();
-
-    let title = if let Some(ref pid) = app.selected_participant {
-        format!(" Accounts for {} ({}/{}) ", pid, selected_idx + 1, total)
-    } else {
-        format!(" All Accounts ({}/{}) ", selected_idx + 1, total)
-    };
-
-    let header = Row::new(vec![
-        Cell::from("Account ID").style(
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Cell::from("Type").style(
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Cell::from("Balance").style(
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        ),
-    ])
-    .height(1)
-    .bottom_margin(1);
-
-    let rows: Vec<Row> = app
-        .accounts
-        .iter()
-        .enumerate()
-        .map(|(i, acc)| {
-            let selected = app.account_state.selected() == Some(i);
-            let style = if selected {
-                Style::default().bg(Color::Blue).fg(Color::White)
-            } else {
-                Style::default()
-            };
-
-            let balance_color = if selected {
-                Color::White
-            } else if acc.balance < 0 {
-                Color::Red
-            } else if acc.balance > 0 {
-                Color::Green
-            } else {
-                Color::White
-            };
-
-            let prefix = if selected { "▶ " } else { "  " };
-            Row::new(vec![
-                Cell::from(format!("{}{}", prefix, acc.id)),
-                Cell::from(acc.account_type.clone()).style(Style::default().fg(if selected {
-                    Color::White
-                } else {
-                    Color::Cyan
-                })),
-                Cell::from(grpc::format_balance(acc.balance))
-                    .style(Style::default().fg(balance_color)),
-            ])
-            .style(style)
-        })
-        .collect();
-
-    let widths = [
-        Constraint::Percentage(50),
-        Constraint::Percentage(20),
-        Constraint::Percentage(30),
+    // Smart Contracts
+    let mut contract_lines = vec![
+        Line::from(vec![
+            Span::styled("Contracts: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                detail.contracts.len().to_string(),
+                Style::default().fg(Color::White),
+            ),
+        ]),
+        Line::raw(""),
     ];
 
-    let table = Table::new(rows, widths).header(header).block(
+    if detail.contracts.is_empty() {
+        contract_lines.push(Line::from(Span::styled(
+            "  No contracts",
+            Style::default().fg(Color::DarkGray),
+        )));
+    } else {
+        for contract in detail.contracts.iter().take(10) {
+            contract_lines.push(Line::from(vec![
+                Span::styled("  • ", Style::default().fg(Color::DarkGray)),
+                Span::styled(&contract.contract_type, Style::default().fg(Color::Cyan)),
+                Span::raw(": "),
+            ]));
+            
+            // Description on next line if needed
+            let desc = if contract.description.len() > 30 {
+                format!("{}...", &contract.description[..27])
+            } else {
+                contract.description.clone()
+            };
+            contract_lines.push(Line::from(vec![
+                Span::raw("    "),
+                Span::styled(desc, Style::default().fg(Color::White)),
+            ]));
+            
+            // Show other participants
+            if !contract.participants.is_empty() {
+                let participants_str = contract.participants.join(", ");
+                let participants_display = if participants_str.len() > 30 {
+                    format!("{}...", &participants_str[..27])
+                } else {
+                    participants_str
+                };
+                contract_lines.push(Line::from(vec![
+                    Span::raw("    "),
+                    Span::styled("With: ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(participants_display, Style::default().fg(Color::Green)),
+                ]));
+            }
+            contract_lines.push(Line::raw(""));
+        }
+        
+        if detail.contracts.len() > 10 {
+            contract_lines.push(Line::from(Span::styled(
+                format!("  ... and {} more", detail.contracts.len() - 10),
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
+    }
+
+    let contracts_widget = Paragraph::new(contract_lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Magenta))
+                .title(" Smart Contracts "),
+        );
+    f.render_widget(contracts_widget, right_chunks[1]);
+}
+
+fn draw_future(f: &mut Frame, app: &App, area: Rect) {
+    let total = app.future_events.len();
+
+    let items: Vec<ListItem> = if app.future_events.is_empty() {
+        vec![ListItem::new(Line::from(Span::styled(
+            "  No scheduled events. Contracts with upcoming execution dates will appear here.",
+            Style::default().fg(Color::DarkGray),
+        )))]
+    } else {
+        app.future_events
+            .iter()
+            .enumerate()
+            .map(|(i, event)| {
+                // Format execution time
+                let execution_time_str = if let Some(datetime) = chrono::DateTime::from_timestamp_millis(event.execution_time) {
+                    datetime.format("%Y-%m-%d %H:%M:%S").to_string()
+                } else {
+                    format!("{}", event.execution_time)
+                };
+                
+                let num = format!("{:>2}. ", i + 1);
+                ListItem::new(vec![
+                    Line::from(vec![
+                        Span::styled(num, Style::default().fg(Color::DarkGray)),
+                        Span::styled(execution_time_str.clone(), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                        Span::raw(" - "),
+                        Span::styled(event.contract_type.clone(), Style::default().fg(Color::Cyan)),
+                    ]),
+                    Line::from(vec![
+                        Span::raw("    "),
+                        Span::styled(event.description.clone(), Style::default().fg(Color::White)),
+                    ]),
+                    Line::from(vec![
+                        Span::raw("    "),
+                        Span::styled("Contract: ", Style::default().fg(Color::DarkGray)),
+                        Span::styled(event.contract_id.clone(), Style::default().fg(Color::Green)),
+                    ]),
+                ])
+            })
+            .collect()
+    };
+
+    let title = format!(" Scheduled Events ({} upcoming) ", total);
+    let list = List::new(items).block(
         Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::Yellow))
             .title(title),
     );
 
-    f.render_widget(table, area);
+    f.render_widget(list, area);
 }
 
 fn draw_transfer(f: &mut Frame, app: &App, area: Rect) {
@@ -845,15 +894,7 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
                 " ↑/↓:Select  Enter:View Details  r:Refresh  q:Quit ".to_string()
             }
             View::ParticipantDetail => {
-                " Enter:View Accounts  b:Back  q:Quit ".to_string()
-            }
-            View::Accounts => {
-                let back = if app.selected_participant.is_some() {
-                    "b:Back  a:Show All  "
-                } else {
-                    ""
-                };
-                format!(" ↑/↓:Select  {}r:Refresh  q:Quit ", back)
+                " b:Back  r:Refresh  q:Quit ".to_string()
             }
             View::Transfer => {
                 if app.transfer_form.selected_field <= 1 {
@@ -863,6 +904,7 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
                 }
             }
             View::History => " r:Refresh  q:Quit ".to_string(),
+            View::Future => " r:Refresh  q:Quit ".to_string(),
         }
     };
 
@@ -887,23 +929,12 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
         }
         View::ParticipantDetail => {
             if let Some(ref detail) = app.participant_detail {
-                format!(" {} accounts | {} total balance ", detail.accounts.len(), grpc::format_balance(detail.total_balance))
+                format!(" {} accounts | {} contracts | {} total balance ", 
+                    detail.accounts.len(), 
+                    detail.contracts.len(),
+                    grpc::format_balance(detail.total_balance))
             } else {
                 " Loading... ".to_string()
-            }
-        }
-        View::Accounts => {
-            if let Some(ref pid) = app.selected_participant {
-                // Find participant name
-                let participant_name = app
-                    .participants
-                    .iter()
-                    .find(|p| p.id == *pid)
-                    .map(|p| p.name.clone())
-                    .unwrap_or_else(|| pid.clone());
-                format!(" {} accounts ({}) ", app.accounts.len(), participant_name)
-            } else {
-                format!(" {} accounts (all) ", app.accounts.len())
             }
         }
         View::Transfer => {
@@ -912,6 +943,9 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
         }
         View::History => {
             format!(" {} transactions ", app.history.len())
+        }
+        View::Future => {
+            format!(" {} scheduled events ", app.future_events.len())
         }
     };
     

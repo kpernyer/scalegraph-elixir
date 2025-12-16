@@ -160,14 +160,76 @@ Show me all account balances for:
 
 ---
 
+### Step 11: Create a Smart Contract (Marketplace Membership)
+
+```
+Create a marketplace membership contract for beauty_hosting that charges all participants 60 EUR per month. Use a 3-month grace period and 9 monthly payments after that.
+```
+
+**Expected Result:**
+- Contract created with all participants enrolled
+- Contract scheduled to execute monthly
+- First payment due after 3 months
+
+---
+
+### Step 12: List Smart Contracts
+
+```
+Show me all active smart contracts in the system.
+```
+
+**Expected Result:**
+- List of all smart contracts with their status
+- Contract types and execution schedules
+
+---
+
+### Step 13: Execute Smart Contract Manually
+
+```
+Execute the marketplace membership contract manually (if it's due).
+```
+
+**Expected Result:**
+- Contract executes if conditions are met
+- All participants charged monthly fee
+- Execution history recorded
+
+---
+
+### Step 14: Create Supplier Registration Contract
+
+```
+Create a supplier registration contract for a new supplier called "new_supplier_123".
+```
+
+**Expected Result:**
+- Supplier registration contract created
+- One-time registration fee (50 EUR) charged
+- Monthly fee starts when first provider uses service
+
+---
+
 ## Key Features Demonstrated
 
+### Layer 1: Pure Core Ledger
 1. **Atomic Multi-Party Transfers**: All-or-nothing guarantees
-2. **Embedded Financing**: Loans provided during settlement
-3. **Formal Loan Tracking**: Receivables/payables for obligation tracking
+2. **Generic Transfers**: Flexible transaction model
+3. **Immutable Audit Trail**: Complete transaction history
+
+### Layer 2: Business Rules
 4. **B2B Invoice Flow**: Purchase invoice → payment
-5. **Real-Time Micro-Payments**: Access control payments
-6. **Platform Fees**: Multi-party fee distribution
+5. **Formal Loan Tracking**: Receivables/payables for obligation tracking
+6. **Embedded Financing**: Loans provided during settlement
+7. **Real-Time Micro-Payments**: Access control payments
+8. **Platform Fees**: Multi-party fee distribution
+
+### Layer 3: Smart Contracts
+9. **Automated Billing**: Marketplace membership contract
+10. **Cron Scheduling**: Periodic contract execution
+11. **Supplier Registration**: Automated registration and monthly fees
+12. **Execution History**: Complete audit trail of contract executions
 
 ## Advanced Demo: Multi-Salon Scenario
 
@@ -199,12 +261,23 @@ If you get errors:
 
 ## What Makes This Demo Interesting
 
-1. **Real-World Scenario**: Models actual business needs (salon needs to pay fees)
-2. **Embedded Financing**: Shows how loans can be provided during settlement
-3. **Atomic Guarantees**: Demonstrates all-or-nothing transaction safety
-4. **Multi-Party Complexity**: Shows how multiple parties coordinate atomically
-5. **Loan Tracking**: Demonstrates formal obligation tracking via receivables/payables
-6. **Micro-Payments**: Shows real-time access control payments
+### Three-Layer Architecture
+1. **Layer 1 (Ledger)**: Pure double-entry bookkeeping with generic transfers
+2. **Layer 2 (Business)**: Explicit financial terminology (loans, invoices) with business semantics
+3. **Layer 3 (Smart Contracts)**: Automation and cron-based contract execution
 
-This demo showcases that Scalegraph isn't just a ledger—it's a complete financial coordination system for multi-party ecosystems.
+### Real-World Scenarios
+4. **Real-World Scenario**: Models actual business needs (salon needs to pay fees)
+5. **Embedded Financing**: Shows how loans can be provided during settlement
+6. **Automated Billing**: Smart contracts handle recurring payments automatically
+7. **Supplier Onboarding**: Automated registration and fee management
+
+### Technical Features
+8. **Atomic Guarantees**: Demonstrates all-or-nothing transaction safety
+9. **Multi-Party Complexity**: Shows how multiple parties coordinate atomically
+10. **Loan Tracking**: Demonstrates formal obligation tracking via receivables/payables
+11. **Micro-Payments**: Shows real-time access control payments
+12. **Execution History**: Complete audit trail of all contract executions
+
+This demo showcases that Scalegraph isn't just a ledger—it's a complete financial coordination system for multi-party ecosystems with three distinct layers: pure ledger, business rules, and smart contract automation.
 

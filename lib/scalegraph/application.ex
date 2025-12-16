@@ -16,51 +16,52 @@ defmodule Scalegraph.Application do
 
   @impl true
   def start(_type, _args) do
-    # Initialize all databases before starting supervision tree
-    Logger.info("Initializing Scalegraph databases...")
+    # Initialize database schemas (only creates if they don't exist)
+    # This ensures tables are ready but does NOT clear or seed data.
+    # Data ingestion is explicit via: mix scalegraph.seed
+    Logger.info("Initializing Scalegraph database schemas...")
 
     # Initialize pure ledger database
-    Logger.info("Initializing Ledger database...")
+    Logger.info("Initializing Ledger database schema...")
     case LedgerStorage.init() do
-      :ok -> :ok
+      :ok ->
+        # Initialize business rules database
+        Logger.info("Initializing Business database schema...")
+        case BusinessStorage.init() do
+          :ok ->
+            # Initialize smart contracts database
+            Logger.info("Initializing Smart Contracts database schema...")
+            case SmartContractsStorage.init() do
+              :ok ->
+                # Initialize participants schema
+                Logger.info("Initializing Participants schema...")
+                case Schema.init_with_migration() do
+                  :ok ->
+                    # All schemas initialized - database is ready to use
+                    # Note: Data ingestion is explicit via: mix scalegraph.seed
+                    continue_startup()
+
+                  {:error, :schema_migration_failed} ->
+                    Logger.error("Cannot start application: schema migration failed")
+                    {:error, :schema_migration_failed}
+
+                  error ->
+                    Logger.error("Failed to initialize participants schema: #{inspect(error)}")
+                    {:error, error}
+                end
+
+              error ->
+                Logger.error("Failed to initialize smart contracts database: #{inspect(error)}")
+                {:error, error}
+            end
+
+          error ->
+            Logger.error("Failed to initialize business database: #{inspect(error)}")
+            {:error, error}
+        end
+
       error ->
         Logger.error("Failed to initialize ledger database: #{inspect(error)}")
-        {:error, error}
-    end
-
-    # Initialize business rules database
-    Logger.info("Initializing Business database...")
-    case BusinessStorage.init() do
-      :ok -> :ok
-      error ->
-        Logger.error("Failed to initialize business database: #{inspect(error)}")
-        {:error, error}
-    end
-
-    # Initialize smart contracts database
-    Logger.info("Initializing Smart Contracts database...")
-    case SmartContractsStorage.init() do
-      :ok -> :ok
-      error ->
-        Logger.error("Failed to initialize smart contracts database: #{inspect(error)}")
-        {:error, error}
-    end
-
-    # Initialize participants (legacy, still using old schema for now)
-    Logger.info("Initializing Participants...")
-    case Schema.init_with_migration() do
-      :ok ->
-        # Auto-seed with example data (ram_copies don't persist between restarts)
-        Logger.info("Seeding database with example participants...")
-        Scalegraph.Seed.run()
-        continue_startup()
-
-      {:error, :schema_migration_failed} ->
-        Logger.error("Cannot start application: schema migration failed")
-        {:error, :schema_migration_failed}
-
-      error ->
-        Logger.error("Failed to initialize participants schema: #{inspect(error)}")
         {:error, error}
     end
   end
@@ -233,4 +234,5 @@ defmodule Scalegraph.Endpoint do
   run(Scalegraph.Ledger.Server)
   run(Scalegraph.Participant.Server)
   run(Scalegraph.Business.Server)
+  run(Scalegraph.SmartContracts.Server)
 end
