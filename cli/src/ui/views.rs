@@ -1,3 +1,18 @@
+//! UI Rendering Functions
+//!
+//! This module contains all the rendering functions for the Scalegraph CLI TUI.
+//! It handles the visual presentation of:
+//!
+//! - Participants list with services
+//! - Accounts table with balances
+//! - Transfer form with account suggestions
+//! - Transaction history
+//! - Status bar and navigation tabs
+//!
+//! All rendering functions use the `ratatui` library to create the terminal UI.
+//! The functions are organized by view type and handle layout, styling, and
+//! user interaction feedback.
+
 use super::app::{App, View};
 use crate::grpc;
 use ratatui::{
@@ -77,6 +92,19 @@ fn draw_participants(f: &mut Frame, app: &mut App, area: Rect) {
         .participants
         .iter()
         .map(|p| {
+            // Format services: show first 3, or count if more
+            let services_display = if p.services.is_empty() {
+                String::from("no services")
+            } else if p.services.len() <= 3 {
+                p.services.join(", ")
+            } else {
+                format!(
+                    "{} (+{} more)",
+                    p.services[..3].join(", "),
+                    p.services.len() - 3
+                )
+            };
+
             let content = Line::from(vec![
                 Span::styled(
                     format!("{:<20}", p.name),
@@ -88,6 +116,11 @@ fn draw_participants(f: &mut Frame, app: &mut App, area: Rect) {
                 Span::styled(format!("[{}]", p.role), Style::default().fg(Color::Cyan)),
                 Span::raw(" "),
                 Span::styled(format!("({})", p.id), Style::default().fg(Color::DarkGray)),
+                Span::raw(" "),
+                Span::styled(
+                    format!("→ {}", services_display),
+                    Style::default().fg(Color::Green),
+                ),
             ]);
             ListItem::new(content)
         })

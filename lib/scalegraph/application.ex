@@ -13,11 +13,24 @@ defmodule Scalegraph.Application do
   def start(_type, _args) do
     # Initialize Mnesia schema before starting supervision tree
     Logger.info("Initializing Scalegraph Ledger...")
-    :ok = Scalegraph.Storage.Schema.init()
+    case Scalegraph.Storage.Schema.init_with_migration() do
+      :ok ->
+        # Auto-seed with example data (ram_copies don't persist between restarts)
+        Logger.info("Seeding database with example participants...")
+        Scalegraph.Seed.run()
+        continue_startup()
 
-    # Auto-seed with example data (ram_copies don't persist between restarts)
-    Logger.info("Seeding database with example participants...")
-    Scalegraph.Seed.run()
+      {:error, :schema_migration_failed} ->
+        Logger.error("Cannot start application: schema migration failed")
+        {:error, :schema_migration_failed}
+
+      error ->
+        Logger.error("Failed to initialize schema: #{inspect(error)}")
+        {:error, error}
+    end
+  end
+
+  defp continue_startup do
 
     port = Application.get_env(:scalegraph, :grpc_port, 50051)
 

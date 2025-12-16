@@ -1,3 +1,17 @@
+//! Application State and Logic
+//!
+//! This module defines the core application state and business logic for the
+//! Scalegraph CLI. It manages:
+//!
+//! - Application state (participants, accounts, transactions)
+//! - User input handling and navigation
+//! - Data loading from the gRPC server
+//! - Transfer form state and validation
+//! - View management and transitions
+//!
+//! The `App` struct is the central state container, and `run_app` is the
+//! main event loop that processes user input and updates the UI.
+
 use crate::grpc::{self, ScalegraphClient};
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
@@ -39,6 +53,7 @@ pub struct ParticipantInfo {
     pub id: String,
     pub name: String,
     pub role: String,
+    pub services: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -138,6 +153,7 @@ impl App {
                 id: p.id,
                 name: p.name,
                 role: grpc::role_to_string(p.role).to_string(),
+                services: p.services,
             })
             .collect();
         self.loading = false;

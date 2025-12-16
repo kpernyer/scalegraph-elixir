@@ -33,6 +33,7 @@ message Participant {
   ParticipantRole role = 3;
   int64 created_at = 4;
   map<string, string> metadata = 5;
+  repeated string services = 6;  // Service identifiers this participant provides
 }
 
 // Account represents a ledger account

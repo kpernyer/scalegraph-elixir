@@ -1,3 +1,18 @@
+//! Scalegraph CLI - Terminal User Interface for the Scalegraph Ledger
+//!
+//! This is the main entry point for the Scalegraph command-line interface.
+//! It provides an interactive TUI (Terminal User Interface) for managing
+//! participants, accounts, and transactions in the Scalegraph ledger system.
+//!
+//! Features:
+//! - Interactive participant and account browsing
+//! - Real-time balance viewing
+//! - Transaction execution
+//! - Transaction history
+//!
+//! The CLI connects to the Scalegraph gRPC server running on localhost:50051
+//! (or a custom address specified via command-line arguments).
+
 mod grpc;
 mod ui;
 

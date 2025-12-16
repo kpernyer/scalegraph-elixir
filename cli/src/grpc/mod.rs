@@ -1,3 +1,15 @@
+//! gRPC Client Module
+//!
+//! This module provides the gRPC client implementation for communicating with
+//! the Scalegraph ledger server. It includes:
+//!
+//! - `ScalegraphClient`: Main client struct that wraps all service clients
+//! - Service-specific methods for Participant, Ledger, and Business operations
+//! - Type conversions between Rust types and protobuf messages
+//!
+//! The client handles connection management, request/response serialization,
+//! and error handling for all gRPC operations.
+
 #[allow(dead_code)]
 pub mod ledger {
     tonic::include_proto!("scalegraph.ledger");

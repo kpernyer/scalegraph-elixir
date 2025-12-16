@@ -147,6 +147,152 @@ defmodule Scalegraph.Storage.Schema do
   end
 
   @doc """
+  Check if the participants table has the correct schema (6 attributes including services).
+  Returns :ok if schema is correct, {:error, :schema_mismatch} if not.
+  """
+  def check_participants_schema do
+    case :mnesia.table_info(@participants_table, :attributes) do
+      [:id, :name, :role, :created_at, :metadata, :services] ->
+        :ok
+
+      attributes ->
+        {:error, :schema_mismatch, attributes}
+    end
+  end
+
+  @doc """
+  Migrate the participants table from old schema (5 fields) to new schema (6 fields).
+  This will preserve all existing data by adding an empty services list to each participant.
+  """
+  def migrate_participants_table do
+    Logger.info("Migrating participants table to new schema...")
+
+    # Step 1: Read all existing participants (in a transaction)
+    read_result =
+      :mnesia.transaction(fn ->
+        :mnesia.foldl(
+          fn record, acc ->
+            case record do
+              {_table, id, name, role, created_at, metadata} ->
+                # Old format (5 fields) - add empty services
+                [{id, name, role, created_at, metadata, []} | acc]
+
+              {_table, id, name, role, created_at, metadata, services} ->
+                # New format (6 fields) - keep as is
+                [{id, name, role, created_at, metadata, services || []} | acc]
+            end
+          end,
+          [],
+          @participants_table
+        )
+      end)
+
+    case read_result do
+      {:atomic, participants} ->
+        # Step 2: Delete the old table (outside transaction)
+        case :mnesia.delete_table(@participants_table) do
+          {:atomic, :ok} ->
+            # Step 3: Create the new table with correct schema
+            storage = storage_type()
+            table_opts =
+              [
+                attributes: [:id, :name, :role, :created_at, :metadata, :services],
+                type: :set
+              ] ++ [{storage, [node()]}]
+
+            case :mnesia.create_table(@participants_table, table_opts) do
+              {:atomic, :ok} ->
+                # Step 4: Write back all participants with new schema (in a transaction)
+                write_result =
+                  :mnesia.transaction(fn ->
+                    Enum.each(participants, fn {id, name, role, created_at, metadata, services} ->
+                      record =
+                        {@participants_table, id, name, role, created_at, metadata, services}
+
+                      :mnesia.write(record)
+                    end)
+                  end)
+
+                case write_result do
+                  {:atomic, :ok} ->
+                    Logger.info("Successfully migrated #{length(participants)} participants to new schema")
+                    :ok
+
+                  {:aborted, reason} ->
+                    Logger.error("Failed to write migrated participants: #{inspect(reason)}")
+                    {:error, reason}
+                end
+
+              {:aborted, reason} ->
+                Logger.error("Failed to create new participants table: #{inspect(reason)}")
+                {:error, reason}
+            end
+
+          {:aborted, reason} ->
+            Logger.error("Failed to delete old participants table: #{inspect(reason)}")
+            {:error, reason}
+        end
+
+      {:aborted, reason} ->
+        Logger.error("Failed to read existing participants: #{inspect(reason)}")
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  Initialize Mnesia schema and tables, with automatic schema migration if needed.
+  """
+  def init_with_migration do
+    init()
+
+    # Check if participants table needs migration
+    case check_participants_schema() do
+      :ok ->
+        :ok
+
+      {:error, :schema_mismatch, old_attributes} ->
+        Logger.warning(
+          "Participants table has old schema #{inspect(old_attributes)}. Attempting migration..."
+        )
+
+        case migrate_participants_table() do
+          :ok ->
+            Logger.info("Schema migration completed successfully")
+            :ok
+
+          {:error, reason} ->
+            Logger.error(
+              "Schema migration failed: #{inspect(reason)}. You may need to clear the database manually."
+            )
+
+            Logger.error("""
+            ════════════════════════════════════════════════════════════════════════
+            Schema Migration Required
+            ════════════════════════════════════════════════════════════════════════
+
+            The participants table has an old schema and cannot be automatically migrated.
+
+            To fix this, you have two options:
+
+            1. Clear the database (WARNING: This will delete all data):
+               - Stop the server
+               - Delete the Mnesia data directory: rm -rf priv/mnesia_data
+               - Restart the server
+
+            2. Manual migration (if you need to preserve data):
+               - Export your data first
+               - Clear the database
+               - Re-import your data
+
+            ════════════════════════════════════════════════════════════════════════
+            """)
+
+            {:error, :schema_migration_failed}
+        end
+    end
+  end
+
+  @doc """
   Clear all data (useful for testing).
   """
   def clear_all do
