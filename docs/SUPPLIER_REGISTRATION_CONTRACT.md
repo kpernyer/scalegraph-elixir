@@ -221,3 +221,4 @@ The first ecosystem provider must have:
 - All monthly fees are split 90/10 between orchestrator and first provider
 - The contract can be queried but cannot be modified after creation
 
+

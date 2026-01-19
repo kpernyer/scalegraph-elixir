@@ -11,3 +11,9 @@ config :scalegraph,
 
 # Mnesia directory for disc_copies
 config :mnesia, dir: ~c"./priv/mnesia_data"
+
+# Suppress Mnesia notices
+config :logger,
+  compile_time_purge_matching: [
+    [level_lower_than: :warning, application: :mnesia]
+  ]

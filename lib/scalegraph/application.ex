@@ -94,29 +94,13 @@ defmodule Scalegraph.Application do
 
           {:error, {:shutdown, {:failed_to_start_child, _, {:listen_error, _, :eaddrinuse}}}} ->
             # Fallback error handling if port check didn't catch it
-            Logger.error("""
-            ════════════════════════════════════════════════════════════════════════
-            Failed to start: Port #{port} is already in use
-            ════════════════════════════════════════════════════════════════════════
-
-            Another process is using port #{port}. To fix:
-
-            1. Check what's using the port:
-               lsof -i :#{port}
-
-            2. Kill the process (replace PID with actual process ID):
-               kill <PID>
-
-            3. Or kill all processes on the port:
-               lsof -ti :#{port} | xargs kill
-
-            4. Then start the server again:
-               mix run --no-halt
-
-            ════════════════════════════════════════════════════════════════════════
-            """)
-
+            Logger.error("Port #{port} is already in use")
             {:error, {:shutdown, "Port #{port} is already in use"}}
+
+          {:error, {:shutdown, reason}} when is_binary(reason) ->
+            # Handle shutdown errors that are already formatted strings
+            Logger.error(reason)
+            {:error, {:shutdown, reason}}
 
           {:error, reason} ->
             Logger.error("Failed to start server: #{inspect(reason)}")
@@ -124,30 +108,8 @@ defmodule Scalegraph.Application do
         end
 
       {:error, {:in_use, pid, process_name}} ->
-        Logger.error("""
-        ════════════════════════════════════════════════════════════════════════
-        Port #{port} is already in use!
-        ════════════════════════════════════════════════════════════════════════
-
-        Process: #{process_name} (PID: #{pid})
-
-        The Scalegraph server is already running. To fix this:
-
-        1. If you want to use the existing server, just connect to it.
-
-        2. If you want to restart the server:
-           - Find and kill the process: kill #{pid}
-           - Or use: lsof -ti :#{port} | xargs kill
-           - Then start the server again
-
-        3. To check what's using the port:
-           lsof -i :#{port}
-
-        ════════════════════════════════════════════════════════════════════════
-        """)
-
-        {:error,
-         {:shutdown, "Port #{port} is already in use by process #{pid} (#{process_name})"}}
+        Logger.error("Port #{port} is already in use by process #{pid} (#{process_name})")
+        {:error, {:shutdown, "Port #{port} is already in use by process #{pid} (#{process_name})"}}
 
       {:error, reason} ->
         Logger.error("Failed to check port #{port}: #{inspect(reason)}")
@@ -229,7 +191,7 @@ defmodule Scalegraph.Endpoint do
 
   use GRPC.Endpoint
 
-  intercept(GRPC.Server.Interceptors.Logger)
+  intercept(Scalegraph.GRPC.DebugLoggerInterceptor)
 
   run(Scalegraph.Ledger.Server)
   run(Scalegraph.Participant.Server)

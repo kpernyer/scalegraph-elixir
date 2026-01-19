@@ -89,3 +89,4 @@ IO.puts(yaml_source)
 - `examples/contracts/` - Example YAML contracts
 - `lib/scalegraph/smart_contracts/yaml_parser.ex` - Parser implementation
 
+

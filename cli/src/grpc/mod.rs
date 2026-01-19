@@ -43,7 +43,7 @@ use business::{
 };
 use smartcontracts::{
     smart_contract_service_client::SmartContractServiceClient, ContractResponse,
-    ListContractsRequest,
+    CreateGenericContractRequest, GenericContract, ListContractsRequest,
 };
 use tonic::transport::Channel;
 
@@ -255,6 +255,20 @@ impl ScalegraphClient {
         };
         let response = self.contracts.list_contracts(request).await?;
         Ok(response.into_inner().contracts)
+    }
+
+    pub async fn create_generic_contract(
+        &mut self,
+        yaml_content: &str,
+        variables: &std::collections::HashMap<String, String>,
+    ) -> Result<GenericContract> {
+        let request = CreateGenericContractRequest {
+            yaml_content: yaml_content.to_string(),
+            yaml_file_path: String::new(),
+            variables: variables.clone(),
+        };
+        let response = self.contracts.create_generic_contract(request).await?;
+        Ok(response.into_inner())
     }
 }
 

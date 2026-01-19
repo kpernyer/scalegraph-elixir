@@ -225,3 +225,4 @@ To manually trigger monthly fee (when first provider uses service):
   {:ok, :started} = Core.trigger_supplier_monthly_fee("supplier_id", "provider_id")
 """)
 
+

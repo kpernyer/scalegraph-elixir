@@ -436,8 +436,8 @@ defmodule Scalegraph.Participant.Core do
          metadata,
          existing_services,
          service_id,
-         about \\ "",
-         contact \\ %{}
+         about,
+         contact
        ) do
     services = existing_services || []
 
@@ -530,8 +530,8 @@ defmodule Scalegraph.Participant.Core do
          metadata,
          services,
          service_id,
-         about \\ "",
-         contact \\ %{}
+         about,
+         contact
        ) do
     services = services || []
 

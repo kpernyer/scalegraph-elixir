@@ -26,13 +26,23 @@ defmodule Scalegraph.SmartContracts.Scheduler do
 
   @impl true
   def handle_info(:check_contracts, state) do
-    Logger.debug("Checking for due contracts...")
-
     case Core.get_due_contracts() do
+      {:ok, []} ->
+        # No contracts due, silently continue
+        :ok
+
       {:ok, contract_ids} ->
         Enum.each(contract_ids, fn contract_id ->
-          Logger.info("Executing due contract: #{contract_id}")
-          Task.start(fn -> Core.execute_contract(contract_id) end)
+          case Core.get_contract(contract_id) do
+            {:ok, contract} ->
+              Logger.info(
+                "Triggering scheduled contract execution: #{contract.name} (id: #{contract_id}, type: #{contract.contract_type})"
+              )
+              Task.start(fn -> Core.execute_contract(contract_id) end)
+
+            {:error, reason} ->
+              Logger.error("Failed to get contract details for #{contract_id}: #{inspect(reason)}")
+          end
         end)
 
       {:error, reason} ->

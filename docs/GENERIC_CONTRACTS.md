@@ -207,3 +207,4 @@ Generic contracts appear in the CLI's "Future" tab with:
 - `lib/scalegraph/smart_contracts/yaml_parser.ex` - YAML parser implementation
 - `lib/mix/tasks/scalegraph.contract.load.ex` - Mix task for loading contracts
 
+

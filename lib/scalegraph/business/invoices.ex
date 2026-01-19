@@ -8,7 +8,6 @@ defmodule Scalegraph.Business.Invoices do
 
   require Logger
 
-  alias Scalegraph.Business.Storage
   alias Scalegraph.Business.Contracts
 
   @doc """

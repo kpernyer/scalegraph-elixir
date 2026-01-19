@@ -204,7 +204,20 @@ defmodule Scalegraph.SmartContracts.Core do
 
     case result do
       {:atomic, schedule} ->
-        Logger.info("Created schedule for contract: #{contract_id} (#{schedule_id})")
+        # Get contract details for logging
+        contract_info = case get_contract(contract_id) do
+          {:ok, contract} ->
+            "contract: #{contract.name} (id: #{contract_id}, type: #{contract.contract_type})"
+          {:error, _} ->
+            "contract: #{contract_id}"
+        end
+        
+        next_execution_str = DateTime.from_unix!(div(schedule.next_execution_at, 1000), :millisecond)
+          |> DateTime.to_string()
+        
+        Logger.info(
+          "Scheduled new job: #{contract_info}, cron: \"#{cron_expression}\", next execution: #{next_execution_str} (schedule_id: #{schedule_id})"
+        )
         {:ok, schedule}
 
       {:aborted, reason} ->
@@ -318,12 +331,23 @@ defmodule Scalegraph.SmartContracts.Core do
           # Update last_executed_at
           update_last_executed(contract.id)
 
-          Logger.info("Executed smart contract: #{contract.id}")
+          tx_count = length(transaction_ids || [])
+          tx_info = if tx_count > 0 do
+            "created #{tx_count} transaction#{if tx_count > 1, do: "s", else: ""}: #{Enum.join(transaction_ids, ", ")}"
+          else
+            "no transactions created"
+          end
+          
+          Logger.info(
+            "Executed smart contract: #{contract.name} (id: #{contract.id}, type: #{contract.contract_type}), #{tx_info}"
+          )
           {:ok, %{executed: true, transaction_ids: transaction_ids}}
 
         {:error, reason} ->
           record_execution(contract.id, :error, [], inspect(reason))
-          Logger.error("Failed to execute smart contract: #{inspect(reason)}")
+          Logger.error(
+            "Failed to execute smart contract: #{contract.name} (id: #{contract.id}, type: #{contract.contract_type}), reason: #{inspect(reason)}"
+          )
           {:error, reason}
       end
     else

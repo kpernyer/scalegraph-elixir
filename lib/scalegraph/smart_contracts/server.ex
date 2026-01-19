@@ -55,6 +55,17 @@ defmodule Scalegraph.SmartContracts.Server do
       {:ok, contracts} ->
         contract_responses = Enum.map(contracts, &contract_to_proto/1)
         
+        # Build filter description for logging
+        filters = []
+        filters = if contract_type, do: ["type=#{contract_type}" | filters], else: filters
+        filters = if status, do: ["status=#{status}" | filters], else: filters
+        filters = if request.limit > 0, do: ["limit=#{request.limit}" | filters], else: filters
+        filter_str = if Enum.empty?(filters), do: "no filters", else: Enum.join(filters, ", ")
+        
+        Logger.info(
+          "List contracts: found #{length(contracts)} contract#{if length(contracts) != 1, do: "s", else: ""} (#{filter_str})"
+        )
+        
         %Smartcontracts.ListContractsResponse{
           contracts: contract_responses
         }
@@ -227,6 +238,9 @@ defmodule Scalegraph.SmartContracts.Server do
     # Convert internal contract to generic proto contract
     generic_contract = contract_to_generic_proto(contract)
     
+    # Ensure next_execution_at is an integer (defensive check)
+    generic_contract = %{generic_contract | next_execution_at: to_integer(generic_contract.next_execution_at)}
+    
     %Smartcontracts.ContractResponse{
       contract: {:generic, generic_contract}
     }
@@ -273,6 +287,8 @@ defmodule Scalegraph.SmartContracts.Server do
     
     # Extract next execution time
     next_execution = extract_execution_time(contract, contract.metadata || %{})
+    # Ensure it's always an integer (defensive conversion)
+    next_execution_int = to_integer(next_execution)
     
     # Get YAML source from metadata
     yaml_source = Map.get(contract.metadata || %{}, "yaml_source", "")
@@ -283,9 +299,9 @@ defmodule Scalegraph.SmartContracts.Server do
       description: contract.description || "",
       contract_type: contract_type_enum,
       status: status_enum,
-      created_at: contract.created_at,
-      last_executed_at: contract.last_executed_at || 0,
-      next_execution_at: next_execution,
+      created_at: to_integer(contract.created_at || 0),
+      last_executed_at: to_integer(contract.last_executed_at || 0),
+      next_execution_at: next_execution_int,
       conditions: conditions,
       actions: actions,
       metadata: Map.new(contract.metadata || %{}),
@@ -298,19 +314,19 @@ defmodule Scalegraph.SmartContracts.Server do
     cond do
       # Check for next_billing_date (subscriptions)
       Map.has_key?(metadata, "next_billing_date") ->
-        Map.get(metadata, "next_billing_date")
+        to_integer(Map.get(metadata, "next_billing_date"))
       
       # Check for due_date (invoices)
       Map.has_key?(metadata, "due_date") ->
-        Map.get(metadata, "due_date")
+        to_integer(Map.get(metadata, "due_date"))
       
       # Check for expires_at
       Map.has_key?(metadata, "expires_at") ->
-        Map.get(metadata, "expires_at")
+        to_integer(Map.get(metadata, "expires_at"))
       
       # Check for first_payment_date
       Map.has_key?(metadata, "first_payment_date") ->
-        Map.get(metadata, "first_payment_date")
+        to_integer(Map.get(metadata, "first_payment_date"))
       
       # Check conditions for time-based execution
       is_list(contract.conditions) ->
@@ -325,12 +341,49 @@ defmodule Scalegraph.SmartContracts.Server do
     Enum.reduce(conditions, 0, fn condition, acc ->
       params = condition["parameters"] || condition[:parameters] || %{}
       cond do
-        Map.has_key?(params, "expires_at") -> max(acc, Map.get(params, "expires_at", 0))
-        Map.has_key?(params, "first_payment_date") -> max(acc, Map.get(params, "first_payment_date", 0))
-        Map.has_key?(params, "next_billing_date") -> max(acc, Map.get(params, "next_billing_date", 0))
+        Map.has_key?(params, "expires_at") -> 
+          max(acc, to_integer(Map.get(params, "expires_at", 0)))
+        Map.has_key?(params, "first_payment_date") -> 
+          max(acc, to_integer(Map.get(params, "first_payment_date", 0)))
+        Map.has_key?(params, "next_billing_date") -> 
+          max(acc, to_integer(Map.get(params, "next_billing_date", 0)))
         true -> acc
       end
     end)
+  end
+
+  # Helper to convert string or integer to integer
+  # This handles all possible types that might come from YAML/metadata
+  # This is critical because YAML parser may store numeric values as strings
+  defp to_integer(value) when is_integer(value), do: value
+  defp to_integer(value) when is_binary(value) do
+    # Remove any whitespace
+    value = String.trim(value)
+    # Try to parse as integer
+    case Integer.parse(value) do
+      {int, _} -> int
+      :error -> 
+        # If it's not a valid integer string, try to parse as float and convert
+        case Float.parse(value) do
+          {float_val, _} -> trunc(float_val)
+          :error -> 
+            # If all parsing fails, log and return 0
+            Logger.warn("Failed to parse integer from value: #{inspect(value)}, defaulting to 0")
+            0
+        end
+    end
+  end
+  defp to_integer(value) when is_float(value), do: trunc(value)
+  defp to_integer(nil), do: 0
+  defp to_integer(value) do
+    # For any other type, try to convert to string first, then parse
+    Logger.warn("Unexpected type for to_integer: #{inspect(value)}, defaulting to 0")
+    try do
+      str = to_string(value)
+      to_integer(str)
+    rescue
+      _ -> 0
+    end
   end
 end
 
