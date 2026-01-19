@@ -748,6 +748,15 @@ impl ScalegraphClient {
                             "status": rs.status,
                         }
                     })),
+                    Some(Contract::Generic(g)) => Some(json!({
+                        "type": "generic",
+                        "contract": {
+                            "id": g.id,
+                            "name": g.name,
+                            "description": g.description,
+                            "status": g.status,
+                        }
+                    })),
                     None => None,
                 }
             })
@@ -808,6 +817,12 @@ impl ScalegraphClient {
                 "type": "revenue_share",
                 "id": rs.id,
                 "status": rs.status,
+            }),
+            Some(Contract::Generic(g)) => json!({
+                "type": "generic",
+                "id": g.id,
+                "name": g.name,
+                "status": g.status,
             }),
             None => json!({"type": "unknown"}),
         };
