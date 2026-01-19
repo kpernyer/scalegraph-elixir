@@ -281,6 +281,7 @@ pub fn role_to_string(role: i32) -> &'static str {
         Ok(ParticipantRole::EcosystemPartner) => "Ecosystem Partner",
         Ok(ParticipantRole::Supplier) => "Supplier",
         Ok(ParticipantRole::EquipmentProvider) => "Equipment Provider",
+        Ok(ParticipantRole::EcosystemOrchestrator) => "Ecosystem Orchestrator",
         _ => "Unknown",
     }
 }
@@ -305,5 +306,294 @@ pub fn format_balance(balance: i64) -> String {
         format!("-{}.{:02}", whole.abs(), cents)
     } else {
         format!("{}.{:02}", whole, cents)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ============================================================================
+    // UNIT TESTS - format_balance
+    // ============================================================================
+
+    #[test]
+    fn test_format_balance_zero() {
+        assert_eq!(format_balance(0), "0.00");
+    }
+
+    #[test]
+    fn test_format_balance_positive_whole() {
+        assert_eq!(format_balance(100), "1.00");
+        assert_eq!(format_balance(500), "5.00");
+        assert_eq!(format_balance(10000), "100.00");
+    }
+
+    #[test]
+    fn test_format_balance_positive_with_cents() {
+        assert_eq!(format_balance(101), "1.01");
+        assert_eq!(format_balance(199), "1.99");
+        assert_eq!(format_balance(1234), "12.34");
+        assert_eq!(format_balance(12345), "123.45");
+    }
+
+    #[test]
+    fn test_format_balance_negative_whole() {
+        assert_eq!(format_balance(-100), "-1.00");
+        assert_eq!(format_balance(-500), "-5.00");
+        assert_eq!(format_balance(-10000), "-100.00");
+    }
+
+    #[test]
+    fn test_format_balance_negative_with_cents() {
+        assert_eq!(format_balance(-101), "-1.01");
+        assert_eq!(format_balance(-199), "-1.99");
+        assert_eq!(format_balance(-1234), "-12.34");
+    }
+
+    #[test]
+    fn test_format_balance_only_cents() {
+        assert_eq!(format_balance(1), "0.01");
+        assert_eq!(format_balance(50), "0.50");
+        assert_eq!(format_balance(99), "0.99");
+    }
+
+    #[test]
+    fn test_format_balance_negative_only_cents() {
+        assert_eq!(format_balance(-1), "-0.01");
+        assert_eq!(format_balance(-50), "-0.50");
+        assert_eq!(format_balance(-99), "-0.99");
+    }
+
+    // ============================================================================
+    // UNIT TESTS - role_to_string
+    // ============================================================================
+
+    #[test]
+    fn test_role_to_string_access_provider() {
+        assert_eq!(role_to_string(1), "Access Provider");
+    }
+
+    #[test]
+    fn test_role_to_string_banking_partner() {
+        assert_eq!(role_to_string(2), "Banking Partner");
+    }
+
+    #[test]
+    fn test_role_to_string_ecosystem_partner() {
+        assert_eq!(role_to_string(3), "Ecosystem Partner");
+    }
+
+    #[test]
+    fn test_role_to_string_supplier() {
+        assert_eq!(role_to_string(4), "Supplier");
+    }
+
+    #[test]
+    fn test_role_to_string_equipment_provider() {
+        assert_eq!(role_to_string(5), "Equipment Provider");
+    }
+
+    #[test]
+    fn test_role_to_string_ecosystem_orchestrator() {
+        assert_eq!(role_to_string(6), "Ecosystem Orchestrator");
+    }
+
+    // ============================================================================
+    // UNIT TESTS - account_type_to_string
+    // ============================================================================
+    // Note: Enum values match protobuf definition in proto/common.proto
+    // 0 = UNSPECIFIED, 1 = STANDALONE, 2 = OPERATING, etc.
+
+    #[test]
+    fn test_account_type_unspecified() {
+        assert_eq!(account_type_to_string(0), "Unknown");
+    }
+
+    #[test]
+    fn test_account_type_standalone() {
+        assert_eq!(account_type_to_string(1), "Standalone");
+    }
+
+    #[test]
+    fn test_account_type_operating() {
+        assert_eq!(account_type_to_string(2), "Operating");
+    }
+
+    #[test]
+    fn test_account_type_receivables() {
+        assert_eq!(account_type_to_string(3), "Receivables");
+    }
+
+    #[test]
+    fn test_account_type_payables() {
+        assert_eq!(account_type_to_string(4), "Payables");
+    }
+
+    #[test]
+    fn test_account_type_escrow() {
+        assert_eq!(account_type_to_string(5), "Escrow");
+    }
+
+    #[test]
+    fn test_account_type_fees() {
+        assert_eq!(account_type_to_string(6), "Fees");
+    }
+
+    #[test]
+    fn test_account_type_usage() {
+        assert_eq!(account_type_to_string(7), "Usage");
+    }
+
+    // ============================================================================
+    // NEGATIVE TESTS - Invalid inputs and edge cases
+    // ============================================================================
+
+    #[test]
+    fn test_role_to_string_invalid_zero() {
+        // 0 is not a valid role, should return "Unknown"
+        assert_eq!(role_to_string(0), "Unknown");
+    }
+
+    #[test]
+    fn test_role_to_string_invalid_negative() {
+        assert_eq!(role_to_string(-1), "Unknown");
+        assert_eq!(role_to_string(-100), "Unknown");
+    }
+
+    #[test]
+    fn test_role_to_string_invalid_too_high() {
+        assert_eq!(role_to_string(7), "Unknown");
+        assert_eq!(role_to_string(100), "Unknown");
+        assert_eq!(role_to_string(i32::MAX), "Unknown");
+    }
+
+    #[test]
+    fn test_account_type_invalid_negative() {
+        assert_eq!(account_type_to_string(-1), "Unknown");
+        assert_eq!(account_type_to_string(-100), "Unknown");
+    }
+
+    #[test]
+    fn test_account_type_invalid_too_high() {
+        assert_eq!(account_type_to_string(8), "Unknown");
+        assert_eq!(account_type_to_string(100), "Unknown");
+        assert_eq!(account_type_to_string(i32::MAX), "Unknown");
+    }
+
+    #[test]
+    fn test_format_balance_large_positive() {
+        // Test very large balances (millions)
+        assert_eq!(format_balance(100_000_000), "1000000.00");
+        assert_eq!(format_balance(999_999_999), "9999999.99");
+    }
+
+    #[test]
+    fn test_format_balance_large_negative() {
+        assert_eq!(format_balance(-100_000_000), "-1000000.00");
+        assert_eq!(format_balance(-999_999_999), "-9999999.99");
+    }
+
+    #[test]
+    fn test_format_balance_i64_boundaries() {
+        // Test near i64 boundaries (avoid actual boundaries due to division)
+        let large = i64::MAX / 100;
+        let result = format_balance(large * 100);
+        assert!(result.ends_with(".00"));
+
+        let large_neg = i64::MIN / 100;
+        let result_neg = format_balance(large_neg * 100);
+        assert!(result_neg.starts_with("-"));
+    }
+
+    // ============================================================================
+    // PROPERTY TESTS
+    // ============================================================================
+
+    mod property_tests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            // Property: format_balance output always contains exactly one decimal point
+            #[test]
+            fn format_balance_has_decimal_point(balance in any::<i64>()) {
+                let result = format_balance(balance);
+                let decimal_count = result.matches('.').count();
+                prop_assert_eq!(decimal_count, 1, "Expected exactly one decimal point in '{}'", result);
+            }
+
+            // Property: format_balance output always has exactly 2 digits after decimal
+            #[test]
+            fn format_balance_has_two_decimal_places(balance in any::<i64>()) {
+                let result = format_balance(balance);
+                let parts: Vec<&str> = result.split('.').collect();
+                prop_assert_eq!(parts.len(), 2, "Expected format 'X.XX' but got '{}'", result);
+                prop_assert_eq!(parts[1].len(), 2, "Expected 2 decimal places but got {} in '{}'", parts[1].len(), result);
+            }
+
+            // Property: negative balances start with '-'
+            #[test]
+            fn negative_balance_starts_with_minus(balance in i64::MIN..0i64) {
+                let result = format_balance(balance);
+                prop_assert!(result.starts_with('-'), "Expected '-' prefix for negative balance {} but got '{}'", balance, result);
+            }
+
+            // Property: non-negative balances don't start with '-'
+            #[test]
+            fn non_negative_balance_no_minus(balance in 0i64..=i64::MAX) {
+                let result = format_balance(balance);
+                prop_assert!(!result.starts_with('-'), "Expected no '-' prefix for balance {} but got '{}'", balance, result);
+            }
+
+            // Property: format_balance is deterministic
+            #[test]
+            fn format_balance_is_deterministic(balance in any::<i64>()) {
+                let result1 = format_balance(balance);
+                let result2 = format_balance(balance);
+                prop_assert_eq!(result1, result2, "Expected deterministic output for {}", balance);
+            }
+
+            // Property: valid role values (1-6) never return "Unknown"
+            #[test]
+            fn valid_roles_return_known_string(role in 1i32..=6) {
+                let result = role_to_string(role);
+                prop_assert_ne!(result, "Unknown", "Role {} should not be Unknown", role);
+            }
+
+            // Property: invalid role values return "Unknown"
+            #[test]
+            fn invalid_roles_return_unknown(role in prop::num::i32::ANY.prop_filter("not valid role", |r| *r < 1 || *r > 6)) {
+                let result = role_to_string(role);
+                prop_assert_eq!(result, "Unknown", "Role {} should be Unknown but got '{}'", role, result);
+            }
+
+            // Property: valid account types (1-7) never return "Unknown"
+            // Note: 0 is UNSPECIFIED which maps to "Unknown"
+            #[test]
+            fn valid_account_types_return_known_string(account_type in 1i32..=7) {
+                let result = account_type_to_string(account_type);
+                prop_assert_ne!(result, "Unknown", "Account type {} should not be Unknown", account_type);
+            }
+
+            // Property: invalid account types return "Unknown"
+            #[test]
+            fn invalid_account_types_return_unknown(account_type in prop::num::i32::ANY.prop_filter("not valid type", |t| *t < 1 || *t > 7)) {
+                let result = account_type_to_string(account_type);
+                prop_assert_eq!(result, "Unknown", "Account type {} should be Unknown but got '{}'", account_type, result);
+            }
+
+            // Property: balance in cents equals parsed output * 100 (for reasonable values)
+            // Limited to avoid floating point precision issues with very large numbers
+            #[test]
+            fn format_balance_roundtrip(balance in 0i64..=999_999_999_99i64) {
+                let cents = balance;
+                let result = format_balance(cents);
+                // Parse back: parse as f64, multiply by 100
+                let parsed: f64 = result.parse().unwrap();
+                let recovered = (parsed * 100.0).round() as i64;
+                prop_assert_eq!(cents, recovered, "Roundtrip failed: {} -> '{}' -> {}", cents, result, recovered);
+            }
+        }
     }
 }
