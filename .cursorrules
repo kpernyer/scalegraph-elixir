@@ -1,0 +1,27 @@
+# Cursor Rules for Scalegraph
+#
+# This project uses Elixir/OTP with Mnesia for the server, plus a Rust TUI CLI.
+# gRPC runs on port 50051 by default.
+#
+# Tooling and workflow:
+# - Version control: JJ (Jujutsu) on top of Git.
+# - Task planning/tracking: Beads (bd).
+#
+# Follow AGENTS.md for required JJ/Beads workflows.
+#
+# Common commands (from Justfile):
+# - just check-env
+# - just setup
+# - just init
+# - just run (server)
+# - just cli (Rust TUI)
+# - just test / just fmt / just lint
+#
+# Mnesia data directory:
+# - ./priv/mnesia_data
+#
+# Notes for edits:
+# - Prefer Elixir modules in lib/scalegraph/* with clear separation:
+#   - ledger (Layer 1), business (Layer 2), smart_contracts (Layer 3).
+# - Rust CLI lives in cli/ (build.rs generates gRPC types).
+# - MCP server lives in mcp/ (requires running Elixir server).

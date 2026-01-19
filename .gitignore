@@ -27,6 +27,9 @@ erl_crash.dump
 .DS_Store
 Thumbs.db
 
+# JJ (Jujutsu VCS)
+.jj/
+
 # Rust CLI
 cli/target/
 cli/Cargo.lock

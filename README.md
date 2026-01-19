@@ -50,6 +50,8 @@ This design ensures the ledger remains simple and replayable while supporting co
 | Rust | 1.70+ | CLI implementation |
 | protoc | 3.x | Protocol Buffers compiler |
 | just | 1.x | Command runner (optional) |
+| jj | 0.37+ | Version control (Jujutsu, colocated with git) |
+| bd | 0.48+ | Issue tracking (Beads) |
 
 ## Environment Setup
 
@@ -404,7 +406,67 @@ scalegraph-elexir/
 
 ## Contributing
 
-### Git Workflow
+### Version Control with JJ (Jujutsu)
+
+This project uses [JJ (Jujutsu)](https://github.com/martinvonz/jj) colocated with git. JJ provides a simpler mental model for version control while remaining fully compatible with git.
+
+```bash
+# Check status
+jj status
+
+# View history
+jj log
+
+# Create a new change (like a WIP commit)
+jj new
+
+# Describe current change
+jj describe -m "Add feature X"
+
+# Push to remote
+jj git push
+```
+
+**Common workflows:**
+
+```bash
+# Start new work
+jj new -m "Working on feature Y"
+
+# Amend current change (no separate add/commit)
+# Just edit files - JJ auto-tracks changes
+jj describe -m "Better description"
+
+# Rebase onto latest main
+jj rebase -d main
+
+# Squash changes
+jj squash
+```
+
+### Issue Tracking with Beads
+
+This project uses [Beads](https://github.com/steveyegge/beads) for AI-native issue tracking. Issues live in the repo alongside code.
+
+```bash
+# Find available work
+bd ready
+
+# Create an issue
+bd create "Add new feature"
+
+# View issue details
+bd show <id>
+
+# Update status
+bd update <id> --status in_progress
+bd close <id>
+
+# Sync with git
+bd sync
+```
+
+### Git Workflow (Legacy)
 
 For larger changes, use feature branches:
 

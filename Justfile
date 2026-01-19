@@ -27,6 +27,8 @@ check-env:
     @echo -n "  Rust:    " && (rustc --version 2>/dev/null || echo "❌ NOT INSTALLED")
     @echo -n "  Cargo:   " && (cargo --version 2>/dev/null || echo "❌ NOT INSTALLED")
     @echo -n "  Protoc:  " && (protoc --version 2>/dev/null || echo "❌ NOT INSTALLED")
+    @echo -n "  JJ:      " && (jj --version 2>/dev/null || echo "❌ NOT INSTALLED")
+    @echo -n "  Beads:   " && (bd version 2>/dev/null || echo "❌ NOT INSTALLED")
     @echo ""
     @echo "If anything is missing, run:"
     @echo "  macOS:  just install-env-macos"
@@ -269,6 +271,84 @@ deploy ENV="staging":
     # Example: ssh {{ENV}}-server 'cd /app && git pull && just release && just restart'
 
 # ============================================================================
+# VERSION CONTROL (JJ + Beads)
+# ============================================================================
+
+# Show JJ status
+status:
+    @jj status
+
+# Show JJ log
+log *ARGS:
+    @jj log {{ARGS}}
+
+# Create new JJ change
+new *ARGS:
+    @jj new {{ARGS}}
+
+# Describe current JJ change
+describe *ARGS:
+    @jj describe {{ARGS}}
+
+# Show JJ diff
+diff *ARGS:
+    @jj diff {{ARGS}}
+
+# Push to remote via JJ
+push:
+    @jj git push
+
+# Fetch from remote via JJ
+fetch:
+    @jj git fetch
+
+# Rebase onto main
+rebase-main:
+    @jj git fetch
+    @jj rebase -d main@origin
+
+# Squash current change into parent
+squash:
+    @jj squash
+
+# Show Beads ready issues
+ready:
+    @bd ready
+
+# List all Beads issues
+issues *ARGS:
+    @bd list {{ARGS}}
+
+# Create a new Beads issue
+issue-create TITLE:
+    @bd create "{{TITLE}}"
+
+# Show Beads issue details
+issue ID:
+    @bd show {{ID}}
+
+# Close a Beads issue
+issue-close ID:
+    @bd close {{ID}}
+
+# Sync Beads with git
+sync:
+    @bd sync
+
+# Run Beads doctor
+doctor:
+    @bd doctor
+
+# Full sync: fetch, rebase, sync beads, push
+full-sync:
+    @echo "🔄 Full sync: fetch → rebase → beads sync → push"
+    @jj git fetch
+    @jj rebase -d main@origin || true
+    @bd sync
+    @jj git push
+    @echo "✅ Fully synced"
+
+# ============================================================================
 # DEVELOPMENT
 # ============================================================================
 
@@ -354,9 +434,16 @@ help:
     @echo "║    3. just run                 (start server)                 ║"
     @echo "║    4. just cli                 (start CLI - new terminal)     ║"
     @echo "║                                                               ║"
+    @echo "║  VERSION CONTROL (JJ + Beads):                                ║"
+    @echo "║    just status                 (jj status)                    ║"
+    @echo "║    just log                    (jj log)                       ║"
+    @echo "║    just push                   (jj git push)                  ║"
+    @echo "║    just ready                  (bd ready - find work)         ║"
+    @echo "║    just issues                 (bd list - all issues)         ║"
+    @echo "║    just full-sync              (fetch, rebase, sync, push)    ║"
+    @echo "║                                                               ║"
     @echo "║  OTHER COMMANDS:                                              ║"
     @echo "║    just test                   (run all tests)                ║"
-    @echo "║    just install                (install CLI globally)         ║"
     @echo "║    just --list                 (show all commands)            ║"
     @echo "║                                                               ║"
     @echo "╚═══════════════════════════════════════════════════════════════╝"
